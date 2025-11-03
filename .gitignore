@@ -1,0 +1,27 @@
+.aider*
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.db
+
+# Virtual environment
+.venv/
+
+# Logs
+logs/
+# Tests
+tests/
+
+# OS files
+.DS_Store
+
+# Test databases
+test_*.db
+
+# Paxos workspace files
+paxos_manager_workspace/
+*.csv
+paxos_sequence.*
