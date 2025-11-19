@@ -4,6 +4,11 @@ import os
 import json
 # Example timestamp regex: [2025-10-20 16:18:14,925]
 TIMESTAMP_RE = re.compile(r"\[(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2},\d+)\]")
+NODE_MSG_RE = re.compile(
+    r"\[Node\s+(\d+)\s*(?:->\s*Node\s*(\d+))?\s*\]",
+    re.IGNORECASE
+)
+TYPE_RE = re.compile(r"type\(([^)]+)\)")
 """
 def parse_logs(logfiles):
     all_events = []
@@ -21,9 +26,13 @@ def parse_logs(logfiles):
             unique_events.append(e)
     return unique_events
 """
+
 def parse_single_log_json(logfile):
-    """Parse one node JSON log and return list of (ts, src, dst, msg) tuples."""
+    """
+    Parse one node JSON log and return list of (ts, src, dst, msg)
+    """
     events = []
+
     with open(logfile) as f:
         for line in f:
             try:
@@ -32,88 +41,58 @@ def parse_single_log_json(logfile):
                 continue
 
             ts = rec.get("ts")
-            node_id = rec.get("node_id")
-            event = rec.get("event")
-            peer = rec.get("peer", "")
-            value = rec.get("value", "")
-            slot = rec.get("slot")
-            pid = rec.get("proposal_id")
+            msg = rec.get("msg", "")
 
-            if not node_id or not event:
-                continue  # skip boilerplate lines
+            # 1) Detect NodeX or NodeX -> NodeY
+            m = NODE_MSG_RE.search(msg)
+            if m:
+                src_id = m.group(1)
+                dst_id = m.group(2)
+            else:
+                continue  # not a network/logical event; skip
 
-            src = f"Node{node_id}"
+            src = f"Node{src_id}"
+            dst = f"Node{dst_id}" if dst_id else src  # self-msg or no dst → note over
 
-            # Determine destination from "peer" field if it contains "[Node X]"
-            dst = src
-            if isinstance(peer, str) and "[Node " in peer:
-                m = re.search(r"\[Node (\d+)\]", peer)
-                if m:
-                    dst = f"Node{m.group(1)}"
+            # 2) Extract message type if available: type(PROMISE)
+            t = TYPE_RE.search(msg)
+            mtype = t.group(1) if t else ""
 
-            # Human-readable message text
-            msg = event.upper()
+            # 3) Try to extract slot/value/pid from msg or extra
+            extra = rec.get("extra", {}).get("extra_data", {})
+            pid = extra.get("proposal_id") or extra.get("pid")
+            slot = extra.get("slot")
+            value = extra.get("value")
+
+            # Build readable label
+            label = mtype
             if value:
-                msg += f" {value}"
+                label += f" value={value}"
             if slot:
-                msg += f" (slot {slot})"
+                label += f" slot={slot}"
             if pid:
-                msg += f" pid={pid}"
+                label += f" pid={pid}"
 
-            events.append((ts, src, dst, msg))
+            label = label.strip() or msg  # fallback to whole msg
+
+            events.append((ts, src, dst, label))
+
     return events
 
 
 def parse_logs_json(logdir):
-    """Load and merge all node_*.log files (JSON format) into sorted events."""
+    """
+    Load all node_*.log JSON logs and merge + sort
+    """
     all_events = []
     for fname in os.listdir(logdir):
         if fname.startswith("node_") and fname.endswith(".log"):
             path = os.path.join(logdir, fname)
             all_events.extend(parse_single_log_json(path))
 
-    # Sort chronologically
+    # Sort by timestamp string (ISO8601 sorted correctly alphabetically)
     all_events.sort(key=lambda x: x[0])
     return all_events
-
-def parse_single_log(logfile):
-    """Parse one node log and return a list of events with timestamps."""
-    # Regex patterns
-    patterns = {
-        "PROPOSE": re.compile(r"\[Node (\d+)\].*proposing value -> (.+)"),
-        "PROMISE": re.compile(r"\[Node (\d+).*PROMISE pid=.* slot=(\d+)"),
-        "ACCEPTED": re.compile(r"\[Node (\d+).*ACCEPTED pid=.* value=(.+) slot=(\d+)"),
-        "DECIDED": re.compile(r"\[Node (\d+).*DECIDED slot=(\d+) value=(.+)"),
-        "LEARNED": re.compile(r"\[Node (\d+).*LEARNED value=(.+) slot=(\d+)"),
-    }
-
-    events = []
-
-    with open(logfile) as f:
-        for line in f:
-            ts_match = TIMESTAMP_RE.search(line)
-            ts = ts_match.group(1) if ts_match else None
-
-            for kind, pattern in patterns.items():
-                if m := pattern.search(line):
-                    if kind == "PROPOSE":
-                        node, val = m.groups()
-                        events.append((ts, f"Node{node}", f"PROPOSE {val.strip()}"))
-                    elif kind == "PROMISE":
-                        node, slot = m.groups()
-                        events.append((ts, f"Node{node}", f"PROMISE (slot {slot})"))
-                    elif kind == "ACCEPTED":
-                        node, val, slot = m.groups()
-                        events.append((ts, f"Node{node}", f"ACCEPTED {val.strip()} (slot {slot})"))
-                    elif kind == "DECIDED":
-                        node, slot, val = m.groups()
-                        events.append((ts, f"Node{node}", f"DECIDED {val.strip()} (slot {slot})"))
-                    elif kind == "LEARNED":
-                        node, val, slot = m.groups()
-                        events.append((ts, f"Node{node}", f"LEARNED {val.strip()} (slot {slot})"))
-                    break  # only match one pattern per line
-
-    return events
 
 def parse_logs(logdir):
     """Parse all node logs in a directory and return merged, sorted events."""
@@ -215,9 +194,11 @@ def write_plantuml(events, output_path):
 def write_plantuml(events, output_path):
     with open(output_path, "w") as out:
         out.write("@startuml\n")
-        out.write("title Paxos Single-Decree Sequence\n")
+        out.write("title Paxos Message Sequence\n")
+
         for i in range(1, 6):
             out.write(f"participant Node{i}\n")
+
         out.write("\n")
 
         for ts, src, dst, msg in events:

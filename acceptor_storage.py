@@ -139,6 +139,7 @@ class AcceptorStorage:
         self.conn.commit()
 
     def set_accepted(self, slot: int, accepted_id: int, accepted_value):
+        print("AcceptorStorage setting accepted value to slot", slot)
         cur = self.conn.cursor()
         cur.execute("""
         INSERT INTO slots (slot, accepted_id, accepted_value) 
@@ -200,10 +201,32 @@ class AcceptorStorage:
         if row is None or row[0] is None:
             return None
         return json.loads(row[0])
+    def accepted_with_slot(self, slot: int) -> Tuple[int, any, any]:
+        """
+        Return a tuple (slot, accepted_id, accepted_value)
+        """
+        accepted_id, accepted_value = self.accepted(slot)
+        return slot, accepted_id, accepted_value
+    def set_latest_proposal_id(self, proposal_id: int):
+        """Persist the latest known proposal ID (used for sync tracking)."""
+        cur = self.conn.cursor()
+        cur.execute("""
+        INSERT INTO meta (key, val) VALUES ('latest_proposal_id', ?)
+        ON CONFLICT(key) DO UPDATE SET val=excluded.val
+        """, (json.dumps(proposal_id),))
+        self.conn.commit()
 
     def get_latest_proposal_id(self) -> Optional[int]:
-        """Return the highest slot number (used as a proposal index)."""
+        """Return the latest known proposal ID (explicit if set, else inferred)."""
         cur = self.conn.cursor()
+        cur.execute("SELECT val FROM meta WHERE key='latest_proposal_id'")
+        row = cur.fetchone()
+        if row and row[0] is not None:
+            try:
+                return json.loads(row[0])
+            except Exception:
+                return int(row[0])
+        # fallback: infer from decisions table if not explicitly stored
         cur.execute("SELECT MAX(slot) FROM decisions")
         row = cur.fetchone()
         return row[0] if row and row[0] is not None else None
@@ -245,9 +268,37 @@ class AcceptorStorage:
             return json.loads(val) if val else None
         except Exception:
             return val
-    # -----------------
-    # Meta helpers
-    # -----------------
+
+    def get_highest_less_than_n(self, slot: int, n: int):
+        """
+        Return (accepted_value, slot, accepted_id) if accepted_id < n,
+        else return None.
+        """
+
+        cur = self.conn.cursor()
+        cur.execute("""
+            SELECT accepted_id, accepted_value
+            FROM slots
+            WHERE slot = ?
+        """, (slot,))
+
+        row = cur.fetchone()
+        if not row:
+            return None
+
+        aid, aval = row
+        if aid is None:
+            return None
+
+        accepted_id = json.loads(aid)
+        accepted_value = json.loads(aval)
+
+        if accepted_id < n:
+            return (accepted_value, slot, accepted_id)
+        return None
+        # -----------------
+        # Meta helpers
+        # -----------------
     def get_meta(self, key: str) -> Optional[str]:
         cur = self.conn.cursor()
         cur.execute("SELECT val FROM meta WHERE key=?", (key,))

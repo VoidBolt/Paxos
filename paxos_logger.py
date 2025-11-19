@@ -7,12 +7,16 @@ from datetime import datetime, timezone
 
 import logging
 # Logger Interface like .Net ILogger
-from ILogger import ILogger
+# from ILogger import ILogger
+from utils.networkLogger import NetworkLogger
 from logging.handlers import RotatingFileHandler
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(message)s')
 logger = logging.getLogger()
+
+verbose=False
+post=True
 
 class JSONFormatter(logging.Formatter):
     def format(self, record):
@@ -70,8 +74,9 @@ class PaxosLogEntry:
     consensus_value: str
     consensus_reached: bool
 
-class PaxosLogger(ILogger):
+class PaxosLogger(NetworkLogger):
     def __init__(self, round, node_id: int, log_dir="logs", console_log_level=logging.INFO):
+        super(PaxosLogger, self).__init__(verbose=verbose, post=post)
         self._round = round
     
         # --- Set up internal Python logger ---
@@ -137,23 +142,3 @@ class PaxosLogger(ILogger):
                 exc_info=(exc_type, exc_val, exc_tb)
             )
 
-    # --------------------------------------------
-    # ✅ Standard logging-style methods
-    # --------------------------------------------
-    def log(self, level, msg, **kwargs):
-        self._logger.log(level, msg, extra={"extra_data": kwargs})
-
-    def debug(self, msg, **kwargs):
-        self._logger.debug(msg, extra={"extra_data": kwargs})
-
-    def info(self, msg, **kwargs):
-        self._logger.info(msg, extra={"extra_data": kwargs})
-
-    def warning(self, msg, **kwargs):
-        self._logger.warning(msg, extra={"extra_data": kwargs})
-
-    def error(self, msg, **kwargs):
-        self._logger.error(msg, extra={"extra_data": kwargs})
-
-    def critical(self, msg, **kwargs):
-        self._logger.critical(msg, extra={"extra_data": kwargs})

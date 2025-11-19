@@ -1,0 +1,61 @@
+syntax = "proto3";
+
+message SinglePaxosPayload {
+  string value = 1;
+  bool ok = 2;
+}
+
+message MultiPaxosPayload {
+  int32 slot = 1;
+  string value = 2;
+  bool ok = 3;
+  int32 accepted_id = 4;
+}
+
+message SlotState {
+  int64 accepted_id = 1;
+  string value = 2;
+  bool decided = 3;
+}
+
+message PaxosMessage {
+  enum Type {
+    UNKNOWN = 0;
+    PREPARE = 1;
+    PROMISE = 2;
+    ACCEPTED = 3;
+    LEARN = 4;
+    LEARN_OK = 5;
+    HEARTBEAT = 6;
+    HEARTBEAT_OK = 7;
+    ELECTION = 8;
+    ELECTION_OK = 9;
+    COORDINATOR = 10;
+    COORDINATOR_OK = 11;
+    SYNC_REQUEST = 12;
+    SYNC_RESPONSE = 13;
+    SINGLE_DECREE_RESULT = 14;
+    SINGLE_DECISION = 15;
+    MULTI_DECREE_RESULT = 16;
+    ERR = 17;
+  }
+
+  Type type = 1;
+  int32 sender_id = 2;
+  int64 proposal_id = 3;
+  int32 slot = 4;
+
+  repeated int32 known_slots = 5;
+  int32 leader_id = 6;
+  int64 timestamp = 7;
+  string error_msg = 8;
+
+  string role = 9;
+  string state = 10;
+
+  oneof payload {
+    SinglePaxosPayload single = 11;
+    MultiPaxosPayload multi = 12;
+  }
+  map<int32, SlotState> slots = 13;
+}

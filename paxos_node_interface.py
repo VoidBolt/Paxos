@@ -27,17 +27,17 @@ class PaxosNodeInterface(ABC):
         pass
 
     @abstractmethod
-    async def send_prepare(self, nodes, proposal):
+    async def send_prepare(self, nodes, proposal) -> dict:
         """Send a prepare request to other nodes."""
         pass
 
     @abstractmethod
-    def receive_prepare(self, proposal):
+    def receive_prepare(self, proposal, sender_id):
         """Handle receiving a prepare request."""
         pass
 
     @abstractmethod
-    async def send_promise(self, proposal):
+    async def send_promise(self, proposal, sender_id) -> dict:
         """Send a promise in response to a prepare request."""
         pass
 
@@ -52,7 +52,7 @@ class PaxosNodeInterface(ABC):
         pass
 
     @abstractmethod
-    async def send_accept(self, nodes, proposal):
+    async def send_accept(self, nodes, proposal) -> dict:
         """Send an accept request to other nodes."""
         pass
 
@@ -62,16 +62,11 @@ class PaxosNodeInterface(ABC):
         pass
 
     @abstractmethod
-    async def send_learn(self, proposal):
+    async def send_learn(self, proposal) -> dict:
         """Handle receiving an accept request."""
         pass
 
     @abstractmethod
     def receive_learn(self, proposal):
         """Handle receiving an accept request."""
-        pass
-
-    @abstractmethod
-    def receive_broadcast(self, proposal):
-        """Handle receiving a broadcast message indicating consensus."""
         pass
