@@ -37,7 +37,7 @@ class PaxosNodeInterface(ABC):
         pass
 
     @abstractmethod
-    async def send_promise(self, proposal, sender_id) -> dict:
+    async def send_promise(self, proposal) -> dict:
         """Send a promise in response to a prepare request."""
         pass
 
@@ -54,11 +54,6 @@ class PaxosNodeInterface(ABC):
     @abstractmethod
     async def send_accept(self, nodes, proposal) -> dict:
         """Send an accept request to other nodes."""
-        pass
-
-    @abstractmethod
-    def receive_accept(self, proposal):
-        """Handle receiving an accept request."""
         pass
 
     @abstractmethod

@@ -6,7 +6,7 @@ import json
 from contextlib import suppress
 
 from typing import Awaitable, Callable
-from proto.paxos_pb2 import PaxosMessage
+from paxos.proto.paxos_pb2 import PaxosMessage
 
 NETWORK_LOG_LEVEL = logging.CRITICAL
 network_logger = logging.getLogger("network")

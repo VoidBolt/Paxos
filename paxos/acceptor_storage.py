@@ -3,8 +3,9 @@ import sqlite3
 
 import json
 # unique id -> unique db -> unique decisions
-from node_lock import NodeLock
 from typing import Dict, Optional, Tuple, List
+
+from paxos.node_lock import NodeLock
 # -----------------
 # Persistent storage
 # -----------------
@@ -116,6 +117,10 @@ class AcceptorStorage:
     # -----------------
     # Unified API
     # -----------------
+    def next_slot(self) -> int:
+        slots = self.all_slots()
+        return max(slots, default=0) + 1
+
     def get_promised(self, slot: Optional[int] = None) -> Optional[int]:
         """Return promised_id for given slot, or global if slot=None."""
         if slot is None:
@@ -148,6 +153,10 @@ class AcceptorStorage:
             accepted_id=excluded.accepted_id,
             accepted_value=excluded.accepted_value
         """, (slot, json.dumps(accepted_id), json.dumps(accepted_value)))
+
+        # atomically update meta.latest_proposal_id if this accepted_id is higher
+        self._update_meta_latest_if_higher(cur, accepted_id)
+
         self.conn.commit()
 
     def get_accepted(self, slot: int) -> Optional[Tuple[Optional[int], Optional[any]]]:
@@ -177,7 +186,8 @@ class AcceptorStorage:
         cur.execute("SELECT slot, accepted_id, accepted_value FROM slots")
         result = {}
         for slot, aid, val in cur.fetchall():
-            result[slot] = (json.loads(aid), json.loads(val))
+            if aid:
+                result[slot] = (json.loads(aid), json.loads(val))
         return result
 
     def next_slot(self) -> int:
@@ -189,18 +199,48 @@ class AcceptorStorage:
     def set_decision(self, slot: int, value, proposal_id):
         cur = self.conn.cursor()
         cur.execute("""
-        INSERT INTO decisions (slot, value) VALUES (?, ?)
+        INSERT INTO decisions (slot, value, proposal_id) VALUES (?, ?, ?)
         ON CONFLICT(slot) DO UPDATE SET value=excluded.value
-        """, (slot, json.dumps(value)))
+        """, (slot, json.dumps(value), proposal_id))
+
+        # ensure promised_id for that slot is at least this decision's proposal_id
+        self.set_accepted(slot, proposal_id, value)
+        self.set_promised(slot, proposal_id)
+
+        # ensure latest_proposal_id is updated as well
+        self._update_meta_latest_if_higher(cur, proposal_id)
         self.conn.commit()
 
     def get_decision(self, slot: int):
         cur = self.conn.cursor()
-        cur.execute("SELECT value FROM decisions WHERE slot=?", (slot,))
+        cur.execute("SELECT value, proposal_id FROM decisions WHERE slot=?", (slot,))
         row = cur.fetchone()
+
         if row is None or row[0] is None:
             return None
-        return json.loads(row[0])
+
+        value = json.loads(row[0])
+        proposal_id = row[1]
+
+        return value, proposal_id
+    def get_last_decision(self):
+        cur = self.conn.cursor()
+        cur.execute("""
+            SELECT slot, value, proposal_id
+            FROM decisions
+            ORDER BY slot DESC
+            LIMIT 1
+        """)
+        row = cur.fetchone()
+
+        if row is None or row[1] is None:
+            return None
+
+        slot = row[0]
+        value = json.loads(row[1])
+        proposal_id = row[2]
+
+        return slot, value, proposal_id
     def accepted_with_slot(self, slot: int) -> Tuple[int, any, any]:
         """
         Return a tuple (slot, accepted_id, accepted_value)
@@ -215,9 +255,7 @@ class AcceptorStorage:
         ON CONFLICT(key) DO UPDATE SET val=excluded.val
         """, (json.dumps(proposal_id),))
         self.conn.commit()
-
     def get_latest_proposal_id(self) -> Optional[int]:
-        """Return the latest known proposal ID (explicit if set, else inferred)."""
         cur = self.conn.cursor()
         cur.execute("SELECT val FROM meta WHERE key='latest_proposal_id'")
         row = cur.fetchone()
@@ -226,11 +264,65 @@ class AcceptorStorage:
                 return json.loads(row[0])
             except Exception:
                 return int(row[0])
-        # fallback: infer from decisions table if not explicitly stored
-        cur.execute("SELECT MAX(slot) FROM decisions")
-        row = cur.fetchone()
         return row[0] if row and row[0] is not None else None
 
+    def _update_meta_latest_if_higher(self, cur, new_pid: int):
+        # cur is an open cursor in an ongoing transaction
+        cur.execute("SELECT val FROM meta WHERE key='latest_proposal_id'")
+        row = cur.fetchone()
+        current = None
+        if row and row[0] is not None:
+            try:
+                current = int(json.loads(row[0]))
+            except Exception:
+                try:
+                    current = int(row[0])
+                except Exception:
+                    current = None
+
+        if current is None or new_pid > current:
+            cur.execute("""
+                INSERT INTO meta (key, val) VALUES ('latest_proposal_id', ?)
+                ON CONFLICT(key) DO UPDATE SET val=excluded.val
+            """, (json.dumps(new_pid),))
+    """
+    def get_latest_proposal_id(self) -> Optional[int]:
+        cur = self.conn.cursor()
+        cur.execute("SELECT val FROM meta WHERE key='latest_proposal_id'")
+        row = cur.fetchone()
+        if row and row[0] is not None:
+            try:
+                return json.loads(row[0])
+            except Exception:
+                # fallback if stored raw
+                try:
+                    return int(row[0])
+                except Exception:
+                    return None
+
+        # Fallback: infer from slots table
+        cur.execute("SELECT promised_id, accepted_id FROM slots")
+        max_pid = None
+        for promised_json, accepted_json in cur.fetchall():
+            if promised_json is not None:
+                try:
+                    pid = json.loads(promised_json)
+                except Exception:
+                    pid = None
+                if pid is not None:
+                    if max_pid is None or pid > max_pid:
+                        max_pid = pid
+            if accepted_json is not None:
+                try:
+                    aid = json.loads(accepted_json)
+                except Exception:
+                    aid = None
+                if aid is not None:
+                    if max_pid is None or aid > max_pid:
+                        max_pid = aid
+
+        return max_pid
+    """
     def all_decisions(self) -> Dict[int, any]:
         cur = self.conn.cursor()
         cur.execute("SELECT slot, value FROM decisions ORDER BY slot")
@@ -320,10 +412,26 @@ def test_latest():
     # Create storage (will init if not exists)
     storage = AcceptorStorage(test_db, node_id=99)
 
+
     # --- Insert some decisions for testing ---
     storage.set_decision(1, {"value": "first"}, 1)
     storage.set_decision(2, {"value": "second"},2)
     storage.set_decision(3, {"value": "third"}, 25)
+
+    print("Get Promised1:", storage.get_promised(1))
+    print("Get Promised2:", storage.get_promised(2))
+    print("Get Promised3:", storage.get_promised(3))
+
+
+    print("Get Accepted1:", storage.get_accepted(1))
+    print("Get Accepted2:", storage.get_accepted(2))
+    print("Get Accepted3:", storage.get_accepted(3))
+
+    print("Get Decisions1: ", storage.get_decision(1))
+    print("Get Decisions2: ", storage.get_decision(2))
+    print("Get Decisions3: ", storage.get_decision(3))
+
+    print("GetLastDecision:", storage.get_latest_decision())
     
     # --- Test get_latest_proposal_id ---
     get_latest_proposal_id = storage.get_latest_proposal_id()

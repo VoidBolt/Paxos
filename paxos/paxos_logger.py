@@ -3,6 +3,7 @@ import csv
 import json
 
 from dataclasses import dataclass
+import time
 from datetime import datetime, timezone
 
 import logging
@@ -14,9 +15,6 @@ from logging.handlers import RotatingFileHandler
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(message)s')
 logger = logging.getLogger()
-
-verbose=False
-post=True
 
 class JSONFormatter(logging.Formatter):
     def format(self, record):
@@ -75,8 +73,9 @@ class PaxosLogEntry:
     consensus_reached: bool
 
 class PaxosLogger(NetworkLogger):
-    def __init__(self, round, node_id: int, log_dir="logs", console_log_level=logging.INFO):
-        super(PaxosLogger, self).__init__(verbose=verbose, post=post)
+    def __init__(self, round, node_id: int, log_dir="logs", console_log_level=logging.INFO, base_url="http://10.10.0.100:5000/api/logger", verbose=False, post=True):
+        super(PaxosLogger, self).__init__(base_url=base_url, verbose=verbose, post=post)
+        print(f"PaxosLogger init with base_url: {base_url}")
         self._round = round
     
         # --- Set up internal Python logger ---
@@ -105,7 +104,7 @@ class PaxosLogger(NetworkLogger):
             from_node_state, to_node_state = to_node_state, from_node_state
         entry = PaxosLogEntry(
             round=self.round,
-            timestamp=datetime.now(),
+            timestamp=time.time_ns() / 1_000_000_000, # datetime.fromtimestamp(time.perf_counter_ns()/ 1_000_000_000), # datetime.now(),
             from_node_id=from_node_id,
             from_node_role=from_node_role,
             from_node_state=from_node_state,
@@ -126,7 +125,7 @@ class PaxosLogger(NetworkLogger):
             for entry in self.entries:
                 writer.writerow([
                     entry.round,
-                    entry.timestamp.strftime("%Y-%m-%d %H:%M:%S"),  # Ensuring timestamp is formatted properly
+                    entry.timestamp, # .strftime("%Y-%m-%d %H:%M:%S"),  # Ensuring timestamp is formatted properly
                     entry.from_node_id, entry.from_node_role, entry.from_node_state,
                     entry.to_node_id, entry.to_node_role, entry.to_node_state, entry.action, entry.action_value,
                     entry.consensus_value, entry.consensus_reached

@@ -6,6 +6,8 @@ class NodeLock:
         self.fd = None
 
     def acquire(self):
+        if self.path.startswith(':memory:'):
+            return  # skip locking in memory mode
         self.fd = open(self.path, "w")
         try:
             fcntl.flock(self.fd, fcntl.LOCK_EX | fcntl.LOCK_NB)

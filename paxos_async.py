@@ -1,14 +1,41 @@
 """
 paxos_async.py
 """
+import sys, pathlib
+sys.path.append(str(pathlib.Path(__file__).parent))
 # from rich import print  # optional, adds color to terminal output
 from datetime import datetime
 import asyncio
 import argparse
-from paxos_node import NodeState, PaxosNode, send_message
-from paxos_logger import PaxosLogger
+from paxos.paxos_node import NodeState, PaxosNode, propose_to
+from paxos.paxos_logger import PaxosLogger
 import logging
 import pathlib
+import json
+import socket
+import platform
+import subprocess
+import netifaces
+
+def get_local_ips_ns(veth_name="veth1"):
+    import netifaces
+    ips = []
+    try:
+        addrs = netifaces.ifaddresses(veth_name)
+        if netifaces.AF_INET in addrs:
+            for info in addrs[netifaces.AF_INET]:
+                ips.append(info["addr"])
+                print(info["addr"])
+    except ValueError:
+        pass
+    return ips
+
+def load_cluster_config(path):
+    with open(path, "r") as f:
+        cfg = json.load(f)
+
+    nodes = cfg["nodes"]
+    return {n["id"]: (n["host"], n["port"]) for n in nodes}
 
 # -----------------
 # CLI and example
@@ -227,36 +254,62 @@ async def heal_node(nodes, node_id):
 
 async def wait_for_nodes_ready(nodes):
     """Wait for all nodes' ready_event flags to be set."""
-    print(nodes.values())
-    input("Wait...")
+    # print(nodes.values())
+    # input("Wait...")
     await asyncio.gather(*(node["node"].ready_event.wait() for node in nodes.values()))
     # Flush logs to ensure clean console output before REPL
     for handler in logging.root.handlers:
         handler.flush()
     print("\nAll nodes are ready. Starting REPL...\n")
 
-async def main_loop(args):
-    peers = {}
-    if args.peers:
-        for entry in args.peers.split(','):
-            if not entry.strip():
-                continue
-            nid_s, port_s = entry.split(':')
-            nid = int(nid_s)
-            peers[nid] = ('127.0.0.1', int(port_s))
+async def main_loop(args, loglevel=logging.DEBUG):
+    """
+    Start a single Paxos node in distributed mode using a cluster config JSON file.
+    The node automatically discovers its peers from the config.
+    """
+    # --- Load cluster config ---
+    with open(args.config, "r") as f:
+        cfg = json.load(f)
+
+    # Build a dict of node_id -> (host, port)
+    nodes = cfg["nodes"]
+    print(nodes.items())
+    all_nodes = {
+        int(node_id): (node_info["host"], node_info["port"])
+        for node_id, node_info in nodes.items()
+    }
+    # Determine my host and port
+    if args.id not in all_nodes:
+        raise ValueError(f"Node ID {args.id} not found in cluster config")
+
+    my_host, my_port = all_nodes[args.id]
+    # Build peers dict (all other nodes)
+    peers = {nid: addr for nid, addr in all_nodes.items() if nid != args.id}
 
     storage_path = f'paxos_manager_workspace/paxos_node_{args.id}.db'
-    node = PaxosNode(args.id, '127.0.0.1', args.port, peers, storage_path)
-    await node.start()
+    node = PaxosNode(
+        args.id, 
+        logger=PaxosLogger(0, args.id, "logs", loglevel), 
+        node_count=len(peers), 
+        host='0.0.0.0', 
+        port=my_port, 
+        peers=peers, 
+        storage_path=storage_path, 
+        strategy="multi"
+    )
 
-    print("Commands: propose <value> | state | exit")
+    await node.start()
+    print(f"Node {args.id} started at {my_host}:{my_port}, peers: {peers}")
+
+    # --- REPL ---
     loop = asyncio.get_event_loop()
+    print("Commands: propose <value> <slot> | state | exit")
 
     while True:
         line = await loop.run_in_executor(None, input, "> ")
         if not line:
             continue
-        parts = line.strip().split(maxsplit=1)
+        parts = line.strip().split()
         cmd = parts[0]
 
         if cmd == 'exit':
@@ -264,6 +317,8 @@ async def main_loop(args):
 
         elif cmd == 'state':
             print(f"Node {args.id}: running={node.running} leader={node.leader_id}")
+            print(f"peers: {node.peers}")
+            print(f"peer_state: {node.peer_state}")
             # print(f"  promised_id: {node.storage.promised_id}")
             
             accepted = node.storage.all_accepted()
@@ -275,23 +330,157 @@ async def main_loop(args):
                     print(f"    slot {slot}: accepted_id={aid}, accepted_value={val}")
 
         elif cmd == 'propose' and len(parts) == 1:
-            print("Usage: propose <value>")
-        elif cmd == 'propose' and len(parts) == 2:
+            print("Usage: propose <value> <slot>")
+        elif cmd == 'propose':
+            if len(parts) != 3:
+                print("Usage: propose <value> <slot>")
+                continue
+
             value = parts[1]
-            # send propose message to local node (will forward to leader if not leader)
-            reply = await send_message('127.0.0.1', args.port, {'type': 'propose', 'value': value})
-            print('reply:', reply)
+            slot = int(parts[2])
+
+            print(f"Proposing value={value} for slot={slot} to peers: {peers}")
+            await propose_to({"node": node}, value, slot, use_worker=True)
         else:
             print('unknown command')
 
     await node.stop()
 
+def get_primary_ip():
+    """Get the primary non-loopback IPv4 of the machine without subprocess."""
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        # Doesn't need to be reachable — no packets are actually sent.
+        s.connect(("8.8.8.8", 80))
+        ip = s.getsockname()[0]
+    except Exception:
+        ip = None
+    finally:
+        s.close()
+    return ip
+
+def get_local_ips(allow_subprocess=True):
+    ips = set()
+
+    # --- Method 1: Primary IP via UDP trick (best) ---
+    primary_ip = get_primary_ip()
+    if primary_ip and not primary_ip.startswith("127."):
+        ips.add(primary_ip)
+
+    # If subprocess allowed, collect all interface IPs too
+    if allow_subprocess:
+        try:
+            system = platform.system().lower()
+
+            if "windows" in system:
+                out = subprocess.check_output("ipconfig", text=True)
+                for line in out.splitlines():
+                    line = line.strip()
+                    if "IPv4 Address" in line or line.startswith("IPv4"):
+                        ip = line.split(":")[-1].strip()
+                        if not ip.startswith("127."):
+                            ips.add(ip)
+
+            else:
+                # hostname -I
+                try:
+                    out = subprocess.check_output("hostname --i", shell=True, text=True)
+                    for ip in out.split():
+                        if not ip.startswith("127."):
+                            ips.add(ip)
+                except:
+                    pass
+
+                # ip addr
+                out = subprocess.check_output("ip addr", text=True)
+                for line in out.splitlines():
+                    line = line.strip()
+                    if line.startswith("inet ") and "127.0.0.1" not in line:
+                        ip = line.split()[1].split("/")[0]
+                        ips.add(ip)
+
+        except Exception:
+            pass
+
+    return list(ips)
+
+
+def detect_id_from_config(config_path, local_ips):
+    """Return the node ID that matches one of the local IP addresses."""
+    with open(config_path, "r") as f:
+        config = json.load(f)
+
+    for node_id, node_info in config["nodes"].items():
+        if node_info["host"] in local_ips:
+            return int(node_id)
+
+    return None
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--id', type=int, required=True)
-    parser.add_argument('--port', type=int, required=True)
-    parser.add_argument('--peers', type=str, default='')
+    subprocess_allowed = True
+    parser.add_argument('--config', type=str, default="cluster_config.json")
+    parser.add_argument('--allow-subprocess', action='store_true',
+                        help="Allow subprocess IP scanning")
+    parser.add_argument("--veth", type=str, default="veth1")
+    """
+    if not subprocess_allowed:
+        parser.add_argument('--id', type=int, required=True)
+    else:
+        import subprocess
+        import platform       
+        def get_ip_address():
+            # Return primary IP address using subprocess calls.
+            try:
+                system = platform.system().lower()
+
+                if "windows" in system:
+                    # Windows: use ipconfig
+                    output = subprocess.check_output("ipconfig", text=True)
+                    for line in output.splitlines():
+                        line = line.strip()
+                        if line.startswith("IPv4 Address") or "IPv4" in line:
+                            ip = line.split(":")[-1].strip()
+                            return ip
+
+                else:
+                    # Linux / macOS: try hostname -I first
+                    try:
+                        ip = subprocess.check_output("hostname -I", shell=True, text=True).strip()
+                        if ip:
+                            return ip.split()[0]
+                    except:
+                        pass
+
+                    # Fallback: ip addr
+                    output = subprocess.check_output("ip addr", text=True)
+                    for line in output.splitlines():
+                        line = line.strip()
+                        if line.startswith("inet ") and "127.0.0.1" not in line:
+                            ip = line.split()[1].split("/")[0]
+                            return ip
+
+            except Exception as e:
+                return None
+
+            return None
+    # parser.add_argument('--port', type=int, required=True)
+    # parser.add_argument('--peers', type=str, default='')
+    parser.add_argument('--config', type=str, default="cluster_config.json")
+    """
     args = parser.parse_args()
+# Detect local IPs
+    local_ips = get_local_ips_ns(args.veth)# allow_subprocess=args.allow_subprocess)
+    print(f"Local IPs: {local_ips}")
+    node_id = detect_id_from_config(args.config, local_ips)
+
+    if node_id is None:
+        raise RuntimeError(
+            f"Could not match any local IP {local_ips} with nodes in {args.config}"
+        )
+
+    args.id = node_id
+    print(f"Detected node ID: {args.id} (IPs: {local_ips})")
     try:
         asyncio.run(main_loop(args))
     except KeyboardInterrupt:
