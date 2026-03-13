@@ -2,6 +2,15 @@ all:
   children:
     cluster:
       hosts:
-        node[0:43]:
+        node0:
+          ansible_host: 141.64.89.60
+          node_id: 0
+        node1:
+          ansible_host: 141.64.89.61
+          node_id: 1
+        node2:
+          ansible_host: 141.64.89.62
+          node_id: 2
       vars:
-        ansible_connection: local
+        ansible_user: marcelpulletz@bht
+        ansible_connection: ssh

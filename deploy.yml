@@ -1,0 +1,54 @@
+- name: Deploy and launch Paxos cluster via Makefile
+  hosts: cluster
+  gather_facts: yes
+  become: yes
+  strategy: free
+
+  vars:
+    repo_dir: "~/Paxos"
+    cluster_config: "{{ repo_dir }}/cluster_config_local.json"
+    base_port: 8001
+
+  tasks:
+    - name: Ensure git and Python3 are installed
+      package:
+        name:
+          - git
+          - python3
+          - python3-venv
+          - python3-pip
+        state: present
+
+    - name: Clone Paxos repository
+      git:
+        repo: https://github.com/VoidBolt/Paxos.git
+        dest: "{{ repo_dir }}"
+        version: main
+        force: yes
+
+    - name: Generate cluster_config_local.json from inventory
+      copy:
+        dest: "{{ cluster_config }}"
+        content: |
+          {
+          {% for host in groups['cluster'] %}
+            "{{ hostvars[host].node_id }}": {
+              "host": "{{ hostvars[host].ansible_host | default('127.0.0.1') }}",
+              "port": {{ base_port + hostvars[host].node_id }},
+              "storage": "node{{ hostvars[host].node_id + 1 }}.db"
+            }{% if not loop.last %},{% endif %}
+          {% endfor %}
+          }
+
+    - name: Install Paxos using Makefile
+      command: make install
+      args:
+        chdir: "{{ repo_dir }}"
+
+    - name: Launch Paxos node using Makefile
+      command: make run ID={{ node_id }} CONFIG={{ cluster_config }}
+      args:
+        chdir: "{{ repo_dir }}"
+      async: 0
+      poll: 0
+      ignore_errors: yes
