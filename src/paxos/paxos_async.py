@@ -16,11 +16,13 @@ import socket
 import platform
 import subprocess
 
-# auto discover own ip in own namespace, redundant if config driven but convenient
-import netifaces
 import subprocess
 import re
 
+# auto discover own ip in own namespace, redundant if config driven but convenient
+# import netifaces
+
+"""
 def get_local_ips(veth: str):
     try:
         cmd = ["ip", "addr", "show", veth]
@@ -45,7 +47,7 @@ def get_local_ips(veth: str):
     except Exception:
         print("get_local_ips failed with an exception.")
         return []
-
+"""
 def get_local_ips_ns(node_id):
     try:
         """sudo ip netns exec node2 ip addr show veth2"""
@@ -69,17 +71,7 @@ def get_local_ips_ns(node_id):
 
     except Exception:
         return []
-"""
-def get_local_ips_ns(veth_name="veth1"):
-    try:
-        addrs = netifaces.ifaddresses(veth_name)
-        return [
-            info["addr"]
-            for info in addrs.get(netifaces.AF_INET, [])
-        ]
-    except ValueError:
-        return []
-"""
+
 def load_cluster_config(path):
     with open(path, "r") as f:
         cfg = json.load(f)
