@@ -1,4 +1,5 @@
 import os
+from pathlib import Path
 import sqlite3
 
 import json
@@ -13,6 +14,7 @@ from paxos.node_lock import NodeLock
 
 class AcceptorStorage:
     """SQLite-based storage for acceptor state, supporting single and multi-slot Paxos."""
+    SQL_DIR = Path(__file__).parent / "sql"
 
     def __init__(self, path: str, node_id: Optional[int] = None):
 
@@ -24,49 +26,56 @@ class AcceptorStorage:
         init_needed = not os.path.exists(path)
         self.path = path
         self.conn = sqlite3.connect(path, check_same_thread=False)
+        self.conn.execute("PRAGMA journal_mode=WAL;")
+        self.conn.execute("PRAGMA synchronous=FULL;")
+        self.meta_sql = self._load_queries("meta.sql")
+        self.global_sql = self._load_queries("global_state.sql")
+        self.slots_sql = self._load_queries("slots.sql")
+        self.decisions_sql = self._load_queries("decisions.sql")
+
         if init_needed:
             self._init_db()
         if node_id is not None:
             self._check_or_set_node_id(node_id)
 
+    def _load_sql(self, filename: str) -> str:
+       with open(self.SQL_DIR / filename, "r", encoding="utf-8") as f:
+           return f.read()
+
+    def _load_queries(self, filename: str) -> dict[str, str]:
+        queries = {}
+        path = self.SQL_DIR / filename
+        current_name = None
+        buffer = []
+
+        with open(path, "r", encoding="utf-8") as f:
+            for line in f:
+                if line.startswith("--"):
+                    if current_name:
+                        queries[current_name] = "".join(buffer).strip()
+                        buffer = []
+                    current_name = line[2:].strip()
+                else:
+                    buffer.append(line)
+
+        if current_name:
+            queries[current_name] = "".join(buffer).strip()
+
+        return queries
+
     def _init_db(self):
         cur = self.conn.cursor()
         # Meta table for node identity and misc info
-        cur.execute("""
-        CREATE TABLE IF NOT EXISTS meta (
-            key TEXT PRIMARY KEY,
-            val TEXT
-        )
-        """)
-        # Global promised_id (for single-decree)
-        cur.execute("""
-        CREATE TABLE IF NOT EXISTS global_state (
-            key TEXT PRIMARY KEY,
-            val TEXT
-        )
-        """)
-        cur.execute("INSERT OR IGNORE INTO global_state (key, val) VALUES ('promised_id', NULL)")
+        
+        cur.execute(self._load_sql("init_meta.sql"))
+        cur.execute(self._load_sql("init_global_state.sql"))
+        cur.execute(self._load_sql("seed_global_state.sql"))
+        cur.execute(self._load_sql("init_slots.sql"))
+        cur.execute(self._load_sql("init_decisions.sql"))
 
-        # Multi-slot table
-        cur.execute("""
-        CREATE TABLE IF NOT EXISTS slots (
-            slot INTEGER PRIMARY KEY,
-            promised_id TEXT,
-            accepted_id TEXT,
-            accepted_value TEXT
-        )
-        """)
-        self.conn.commit()
-        # Decisions table
-        cur.execute("""
-        CREATE TABLE IF NOT EXISTS decisions (
-            slot INTEGER PRIMARY KEY,
-            value TEXT,
-            proposal_id INTEGER
-        )
-        """)
         self.conn.commit()
 
+    """
     def _check_or_set_node_id(self, node_id: int):
         cur = self.conn.cursor()
         cur.execute("SELECT val FROM meta WHERE key='node_id'")
@@ -74,6 +83,26 @@ class AcceptorStorage:
         if not row:
             # Not set yet, bind this DB to the node_id
             cur.execute("INSERT INTO meta (key, val) VALUES ('node_id', ?)", (json.dumps(node_id),))
+            self.conn.commit()
+        else:
+            stored = json.loads(row[0])
+            if stored != node_id:
+                raise RuntimeError(
+                    f"Database {self.path} already bound to node_id={stored}, "
+                    f"but tried to start with node_id={node_id}"
+                )
+    """
+
+    def _check_or_set_node_id(self, node_id: int):
+        cur = self.conn.cursor()
+        cur.execute(self.meta_sql["get_node_id"])
+        row = cur.fetchone()
+
+        if not row:
+            cur.execute(
+                self.meta_sql["insert_node_id"],
+                (json.dumps(node_id),)
+            )
             self.conn.commit()
         else:
             stored = json.loads(row[0])
@@ -100,6 +129,7 @@ class AcceptorStorage:
     # -----------------
     # Global promised_id (single-decree) – internal use
     # -----------------
+    """
     def _get_global_promised(self) -> Optional[int]:
         cur = self.conn.cursor()
         cur.execute("SELECT val FROM global_state WHERE key='promised_id'")
@@ -113,7 +143,23 @@ class AcceptorStorage:
         cur.execute("UPDATE global_state SET val=? WHERE key='promised_id'",
                     (None if v is None else json.dumps(v),))
         self.conn.commit()
+    """
+    def _get_global_promised(self) -> Optional[int]:
+        cur = self.conn.cursor()
+        cur.execute(self.global_sql["get_global_promised"])
+        row = cur.fetchone()
+        if not row or row[0] is None:
+            return None
+        return json.loads(row[0])
 
+
+    def _set_global_promised(self, v: Optional[int]):
+        cur = self.conn.cursor()
+        cur.execute(
+            self.global_sql["set_global_promised"],
+            (None if v is None else json.dumps(v),)
+        )
+        self.conn.commit()
     # -----------------
     # Unified API
     # -----------------
@@ -122,53 +168,52 @@ class AcceptorStorage:
         return max(slots, default=0) + 1
 
     def get_promised(self, slot: Optional[int] = None) -> Optional[int]:
-        """Return promised_id for given slot, or global if slot=None."""
         if slot is None:
             return self._get_global_promised()
+
         cur = self.conn.cursor()
-        cur.execute("SELECT promised_id FROM slots WHERE slot=?", (slot,))
+        cur.execute(self.slots_sql["get_promised"], (slot,))
         row = cur.fetchone()
         if not row or row[0] is None:
             return None
         return json.loads(row[0])
 
     def set_promised(self, slot: Optional[int], proposal_id: int):
-        """Set promised_id for given slot, or global if slot=None."""
         if slot is None:
             return self._set_global_promised(proposal_id)
+
         cur = self.conn.cursor()
-        cur.execute("""
-        INSERT INTO slots(slot, promised_id) VALUES (?, ?)
-        ON CONFLICT(slot) DO UPDATE SET promised_id=excluded.promised_id
-        """, (slot, json.dumps(proposal_id)))
+        cur.execute(
+            self.slots_sql["upsert_promised"],
+            (slot, json.dumps(proposal_id))
+        )
         self.conn.commit()
 
     def set_accepted(self, slot: int, accepted_id: int, accepted_value):
-        print("AcceptorStorage setting accepted value to slot", slot)
         cur = self.conn.cursor()
-        cur.execute("""
-        INSERT INTO slots (slot, accepted_id, accepted_value) 
-        VALUES (?, ?, ?)
-        ON CONFLICT(slot) DO UPDATE SET
-            accepted_id=excluded.accepted_id,
-            accepted_value=excluded.accepted_value
-        """, (slot, json.dumps(accepted_id), json.dumps(accepted_value)))
+
+        cur.execute(
+            self.slots_sql["upsert_accepted"],
+            (slot, json.dumps(accepted_id), json.dumps(accepted_value))
+        )
 
         # atomically update meta.latest_proposal_id if this accepted_id is higher
         self._update_meta_latest_if_higher(cur, accepted_id)
 
         self.conn.commit()
 
-    def get_accepted(self, slot: int) -> Optional[Tuple[Optional[int], Optional[any]]]:
+    def get_accepted(self, slot: int):
         cur = self.conn.cursor()
-        cur.execute("SELECT accepted_id, accepted_value FROM slots WHERE slot=?", (slot,))
+        cur.execute(self.slots_sql["get_accepted"], (slot,))
         row = cur.fetchone()
         if not row:
             return None
+
         aid, val = row
-        accepted_id = json.loads(aid) if aid is not None else None
-        accepted_value = json.loads(val) if val is not None else None
-        return (accepted_id, accepted_value)
+        return (
+            json.loads(aid) if aid else None,
+            json.loads(val) if val else None
+        )
 
     def accepted(self, slot: int) -> Tuple[Optional[int], Optional[any]]:
         result = self.get_accepted(slot)
@@ -178,12 +223,13 @@ class AcceptorStorage:
 
     def all_slots(self) -> List[int]:
         cur = self.conn.cursor()
-        cur.execute("SELECT slot FROM slots")
+        cur.execute(self.slots_sql["all_slots"])
         return [row[0] for row in cur.fetchall()]
 
-    def all_accepted(self) -> Dict[int, Tuple[int, any]]:
+    def all_accepted(self):
         cur = self.conn.cursor()
-        cur.execute("SELECT slot, accepted_id, accepted_value FROM slots")
+        cur.execute(self.slots_sql["all_accepted"])
+
         result = {}
         for slot, aid, val in cur.fetchall():
             if aid:
@@ -198,31 +244,50 @@ class AcceptorStorage:
     # -----------------
     def set_decision(self, slot: int, value, proposal_id):
         cur = self.conn.cursor()
-        cur.execute("""
-        INSERT INTO decisions (slot, value, proposal_id) VALUES (?, ?, ?)
-        ON CONFLICT(slot) DO UPDATE SET value=excluded.value
-        """, (slot, json.dumps(value), proposal_id))
 
-        # ensure promised_id for that slot is at least this decision's proposal_id
-        self.set_accepted(slot, proposal_id, value)
-        self.set_promised(slot, proposal_id)
+        cur.execute(
+            self.decisions_sql["upsert_decision"],
+            (slot, json.dumps(value), proposal_id)
+        )
 
-        # ensure latest_proposal_id is updated as well
+        # Inline to preserve atomicity (do NOT call set_accepted/set_promised)
+        cur.execute(
+            self.slots_sql["upsert_accepted"],
+            (slot, json.dumps(proposal_id), json.dumps(value))
+        )
+
+        cur.execute(
+            self.slots_sql["upsert_promised"],
+            (slot, json.dumps(proposal_id))
+        )
+
         self._update_meta_latest_if_higher(cur, proposal_id)
         self.conn.commit()
 
     def get_decision(self, slot: int):
         cur = self.conn.cursor()
-        cur.execute("SELECT value, proposal_id FROM decisions WHERE slot=?", (slot,))
+        cur.execute(self.decisions_sql["get_decision"], (slot,))
         row = cur.fetchone()
 
-        if row is None or row[0] is None:
+        if not row or row[0] is None:
             return None
 
-        value = json.loads(row[0])
-        proposal_id = row[1]
+        return json.loads(row[0]), row[1]
 
-        return value, proposal_id
+    def all_decisions(self):
+        cur = self.conn.cursor()
+        cur.execute(self.decisions_sql["all_decisions"])
+        return {slot: json.loads(val) for slot, val in cur.fetchall()}
+
+
+    def get_latest_decision(self):
+        cur = self.conn.cursor()
+        cur.execute(self.decisions_sql["get_latest_decision"])
+        row = cur.fetchone()
+        if not row:
+            return None
+        return json.loads(row[1]) if row[1] else None
+
     def get_last_decision(self):
         cur = self.conn.cursor()
         cur.execute("""
@@ -266,67 +331,6 @@ class AcceptorStorage:
                 return int(row[0])
         return row[0] if row and row[0] is not None else None
 
-    def _update_meta_latest_if_higher(self, cur, new_pid: int):
-        # cur is an open cursor in an ongoing transaction
-        cur.execute("SELECT val FROM meta WHERE key='latest_proposal_id'")
-        row = cur.fetchone()
-        current = None
-        if row and row[0] is not None:
-            try:
-                current = int(json.loads(row[0]))
-            except Exception:
-                try:
-                    current = int(row[0])
-                except Exception:
-                    current = None
-
-        if current is None or new_pid > current:
-            cur.execute("""
-                INSERT INTO meta (key, val) VALUES ('latest_proposal_id', ?)
-                ON CONFLICT(key) DO UPDATE SET val=excluded.val
-            """, (json.dumps(new_pid),))
-    """
-    def get_latest_proposal_id(self) -> Optional[int]:
-        cur = self.conn.cursor()
-        cur.execute("SELECT val FROM meta WHERE key='latest_proposal_id'")
-        row = cur.fetchone()
-        if row and row[0] is not None:
-            try:
-                return json.loads(row[0])
-            except Exception:
-                # fallback if stored raw
-                try:
-                    return int(row[0])
-                except Exception:
-                    return None
-
-        # Fallback: infer from slots table
-        cur.execute("SELECT promised_id, accepted_id FROM slots")
-        max_pid = None
-        for promised_json, accepted_json in cur.fetchall():
-            if promised_json is not None:
-                try:
-                    pid = json.loads(promised_json)
-                except Exception:
-                    pid = None
-                if pid is not None:
-                    if max_pid is None or pid > max_pid:
-                        max_pid = pid
-            if accepted_json is not None:
-                try:
-                    aid = json.loads(accepted_json)
-                except Exception:
-                    aid = None
-                if aid is not None:
-                    if max_pid is None or aid > max_pid:
-                        max_pid = aid
-
-        return max_pid
-    """
-    def all_decisions(self) -> Dict[int, any]:
-        cur = self.conn.cursor()
-        cur.execute("SELECT slot, value FROM decisions ORDER BY slot")
-        return {slot: json.loads(val) for slot, val in cur.fetchall()}
 
     def get_known_slots(self) -> list[int]:
         """
@@ -344,22 +348,6 @@ class AcceptorStorage:
         cur = self.conn.cursor()
         cur.execute("SELECT slot, proposal_id FROM decisions ORDER BY slot ASC")
         return cur.fetchall()
-
-    def get_latest_decision(self) -> Optional[any]:
-        """
-        Return the most recently decided value (highest slot),
-        or None if no decisions have been made yet.
-        """
-        cur = self.conn.cursor()
-        cur.execute("SELECT slot, value FROM decisions ORDER BY slot DESC LIMIT 1")
-        row = cur.fetchone()
-        if not row:
-            return None
-        slot, val = row
-        try:
-            return json.loads(val) if val else None
-        except Exception:
-            return val
 
     def get_highest_less_than_n(self, slot: int, n: int):
         """
@@ -388,22 +376,43 @@ class AcceptorStorage:
         if accepted_id < n:
             return (accepted_value, slot, accepted_id)
         return None
-        # -----------------
-        # Meta helpers
-        # -----------------
-    def get_meta(self, key: str) -> Optional[str]:
+
+    # -----------------
+    # Meta helpers
+    # -----------------
+    def get_meta(self, key: str):
         cur = self.conn.cursor()
-        cur.execute("SELECT val FROM meta WHERE key=?", (key,))
+        cur.execute(self.meta_sql["get_meta"], (key,))
         row = cur.fetchone()
         return None if not row else json.loads(row[0])
 
     def set_meta(self, key: str, val):
         cur = self.conn.cursor()
-        cur.execute("""
-        INSERT INTO meta (key, val) VALUES (?, ?)
-        ON CONFLICT(key) DO UPDATE SET val=excluded.val
-        """, (key, json.dumps(val)))
+        cur.execute(
+            self.meta_sql["upsert_meta"],
+            (key, json.dumps(val))
+        )
         self.conn.commit()
+
+    def _update_meta_latest_if_higher(self, cur, new_pid: int):
+        cur.execute(self.meta_sql["get_latest_proposal_id"])
+        row = cur.fetchone()
+
+        current = None
+        if row and row[0] is not None:
+            try:
+                current = int(json.loads(row[0]))
+            except Exception:
+                try:
+                    current = int(row[0])
+                except Exception:
+                    current = None
+
+        if current is None or new_pid > current:
+            cur.execute(
+                self.meta_sql["upsert_latest_proposal_id"],
+                (json.dumps(new_pid),)
+            )
 
 def test_latest():
     # Example DB path for testing

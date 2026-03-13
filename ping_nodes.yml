@@ -1,0 +1,15 @@
+---
+- name: Test command in network namespaces
+  hosts: node0_43
+  gather_facts: false
+  vars:
+    cmd: "ping -c 1 10.10.0.0" # default command, can override per host
+
+  tasks:
+    - name: Execute command inside namespace
+      command: "/path/to/ns_exec.sh {{ ns_name }} {{ cmd }}"
+      register: result
+
+    - name: Show output
+      debug:
+        var: result.stdout

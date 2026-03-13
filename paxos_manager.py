@@ -21,7 +21,7 @@ from prompt_toolkit.patch_stdout import patch_stdout
 # paxos_async must be on PYTHONPATH; keep the manager next to it.
 # import paxos_async as paxos_mod
 from paxos_async import wait_for_nodes_ready, print_state, crash_node, heal_node, start_nodes, stop_nodes
-from paxos_node import propose_to, CONSOLE_LOG_LEVEL
+from paxos.paxos_node import propose_to, CONSOLE_LOG_LEVEL
 
 async def repl(nodes):
     # Wait until all nodes are confirmed ready before allowing interaction

@@ -1,0 +1,7 @@
+all:
+  children:
+    cluster:
+      hosts:
+        node[0:43]:
+      vars:
+        ansible_connection: local

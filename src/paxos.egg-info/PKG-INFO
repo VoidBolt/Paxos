@@ -1,0 +1,7 @@
+Metadata-Version: 2.4
+Name: paxos
+Version: 0.1.0
+Requires-Dist: numpy
+Requires-Dist: protobuf
+Requires-Dist: pytest
+Requires-Dist: anyio

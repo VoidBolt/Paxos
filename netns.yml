@@ -1,0 +1,40 @@
+- name: Test namespace execution
+  hosts: localhost
+  gather_facts: no
+  strategy: free
+
+  tasks:
+    - name: Get namespace list
+      command: ip netns list
+      register: ns_list
+
+    - name: Extract namespace names
+      set_fact:
+        namespaces: "{{ ns_list.stdout_lines | map('regex_replace', ' .*', '') | list }}"
+
+    - name: Show discovered namespaces
+      debug:
+        var: namespaces
+
+    - name: Run hostname inside each namespace
+      become: yes
+      command: ip netns exec {{ item }} hostname
+      loop: "{{ namespaces }}"
+      register: results
+
+    - name: Show execution results
+      debug:
+        msg: "{{ item.item }} -> rc={{ item.rc }}"
+      loop: "{{ results.results }}"
+
+    - name: Ping 10.10.0.1 from each namespace
+      become: yes
+      command: ip netns exec {{ item }} ping -c 1 -W 1 10.10.0.1
+      loop: "{{ namespaces }}"
+      register: ping_results
+      ignore_errors: yes
+
+    - name: Show ping results
+      debug:
+        msg: "{{ item.item }} -> rc={{ item.rc }}"
+      loop: "{{ ping_results.results }}"

@@ -284,7 +284,7 @@ class PaxosNode(PaxosNodeInterface):
                     accepted_id = data.accepted_id
                     value = data.value
                     decided = data.decided
-
+                    
                     self.set_consensus(value, slot, accepted_id)
                     """
                     Logical = self.storage.get_accepted(slot)
@@ -472,11 +472,15 @@ class PaxosNode(PaxosNodeInterface):
         require_sync = False #default
 
         last_decision = self.storage.get_last_decision()
+        latest = self.storage.get_latest_proposal_id()
+        my_pid = latest if latest is not None else 0
+
+        # print("Last Decision:", last_decision)
         if not last_decision:
-            latest = self.storage.get_latest_proposal_id()
-            my_pid = latest if latest is not None else 0
+
+
             require_sync = not self.paxos_in_progress and msg.proposal_id>my_pid # and msg.proposal_id > my_pid
-            # print(f"Node {self.node_id} Heartbeat from Node {msg.sender_id} with proposal_id: {msg.proposal_id}, my_pid: {my_pid}, checking if reconciliation is required...require_sync?{require_sync}")
+            print(f"Node {self.node_id} Heartbeat from Node {msg.sender_id} with proposal_id: {msg.proposal_id}, my_pid: {my_pid}, checking if reconciliation is required...require_sync?{require_sync}")
 
             self.logger.info(
                 f"[Node {self.node_id}] Detected higher proposal ID "
@@ -486,7 +490,7 @@ class PaxosNode(PaxosNodeInterface):
 
         if last_decision:
             slot, val, pid = last_decision
-            require_sync = not self.paxos_in_progress and msg.proposal_id>pid # and msg.proposal_id > my_pid
+            require_sync = not self.paxos_in_progress and msg.proposal_id>latest # pid # and msg.proposal_id > my_pid
             # print(f"Node {self.node_id} Heartbeat from Node {msg.sender_id} with proposal_id: {msg.proposal_id}, pid: {pid}, checking if reconciliation is required...require_sync?{require_sync}")
 
             self.logger.info(
@@ -1467,9 +1471,13 @@ class PaxosNode(PaxosNodeInterface):
         )
 
     def set_consensus(self, value, slot, accepted_id):
+        print(f"Setting Consensus...")        
         self.last_consensus = value
         self.storage.set_decision(slot, value, accepted_id)
         self.storage.set_latest_proposal_id(accepted_id)
+
+        print("After setting decision, and latest proposal id:")
+        print("Latest Proposal id:", self.storage.get_latest_proposal_id())
 
         if isinstance(self.strategy, SingleDecreePaxos):
             self.strategy.chosen_value = value
@@ -1572,26 +1580,22 @@ class PaxosNode(PaxosNodeInterface):
     # -----------------
     async def start_server(self):
         # For simulated environment clusters
+        if self.host is None:
+            self.host = "127.0.0.1"
+        if self.port is None:
+            self.port = 0
+        """
         if self.host is None or self.port is None:
             # Simulation mode: no TCP server required
             self.server = None
             return
+        """
         self.server = await asyncio.start_server(self.handle_connection, self.host, self.port)
         addr = self.server.sockets[0].getsockname()
         self.ready_event.set()  # ✅ mark as ready
         # self.logger.info(f"[Node {self.node_id}] listening on {addr}")
-        """
-        e1 = f"[Node {self.node_id}]-NET ->" + " " + NetEvent.SERVER_LISTEN.value + " " + str(addr)
-
-        self.log_event(
-            logging.INFO,
-            e1
-        )
-        """
         async with self.server:
             await self.server.serve_forever()
-        # async with self.server:
-        #    await self.server.serve_forever()
 
     async def handle_connection(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter):
         peer = writer.get_extra_info('peername')

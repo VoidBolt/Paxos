@@ -4,13 +4,19 @@ import threading
 import datetime
 import requests
 from urllib3.exceptions import NewConnectionError
-from formatting import install_rich, print_jq
+try:
+    from formatting import install_rich, print_jq
+    _RICH_AVAILABLE = True
+except ImportError:
+    install_rich = None
+    print_jq = None
+    _RICH_AVAILABLE = False
 
 # works with report_server but both still need work, but this is better since it implements the standard logger interface!
 #from networking.report_server import main
 
 # Logger Interface like .Net ILogger
-from ILogger import ILogger
+from .ILogger import ILogger
 
 class NetworkLogger(ILogger):
     def __init__(
@@ -25,7 +31,14 @@ class NetworkLogger(ILogger):
 
         print(f"NetworkLogger init with base_url: {base_url}")
         # Optional rich console
-        self.console = install_rich()
+        if _RICH_AVAILABLE and install_rich:
+            try:
+                self.console = install_rich()
+            except Exception:
+                self.console = None
+        else:
+            self.console = None
+
         self._print = self.console.print if self.console else print
         self._log = self.console.log if self.console else print
 
@@ -64,7 +77,7 @@ class NetworkLogger(ILogger):
         formatted = self._format_args_for_logging(*args)
         exception_info = self._wrap_exception(err)
 
-        if jq and self.verbose:
+        if jq and self.verbose and print_jq:
             print_jq(formatted)
         elif self.verbose:
             self._print(f"[{level}] {' '.join(formatted)}")

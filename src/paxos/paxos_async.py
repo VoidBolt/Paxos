@@ -15,21 +15,71 @@ import json
 import socket
 import platform
 import subprocess
-import netifaces
 
+# auto discover own ip in own namespace, redundant if config driven but convenient
+import netifaces
+import subprocess
+import re
+
+def get_local_ips(veth: str):
+    try:
+        cmd = ["ip", "addr", "show", veth]
+        print(f"Executing subprocess with cmd: {cmd}")
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            check=False
+        )
+
+        if result.returncode != 0:
+            return []
+
+        output = result.stdout
+
+        # Extract IPv4 addresses
+        ips = re.findall(r"inet (\d+\.\d+\.\d+\.\d+)/", output)
+
+        return ips
+
+    except Exception:
+        print("get_local_ips failed with an exception.")
+        return []
+
+def get_local_ips_ns(node_id):
+    try:
+        """sudo ip netns exec node2 ip addr show veth2"""
+        """sudo ip addr show veth[id]"""
+        result = subprocess.run(
+            ["sudo", "ip","netns", "exec", f"node{node_id}", "ip", "addr", "show", f"veth{node_id}"],
+            capture_output=True,
+            text=True,
+            check=False
+        )
+
+        if result.returncode != 0:
+            return []
+
+        output = result.stdout
+
+        # Extract IPv4 addresses
+        ips = re.findall(r"inet (\d+\.\d+\.\d+\.\d+)/", output)
+
+        return ips
+
+    except Exception:
+        return []
+"""
 def get_local_ips_ns(veth_name="veth1"):
-    import netifaces
-    ips = []
     try:
         addrs = netifaces.ifaddresses(veth_name)
-        if netifaces.AF_INET in addrs:
-            for info in addrs[netifaces.AF_INET]:
-                ips.append(info["addr"])
-                print(info["addr"])
+        return [
+            info["addr"]
+            for info in addrs.get(netifaces.AF_INET, [])
+        ]
     except ValueError:
-        pass
-    return ips
-
+        return []
+"""
 def load_cluster_config(path):
     with open(path, "r") as f:
         cfg = json.load(f)
@@ -278,20 +328,29 @@ async def main_loop(args, loglevel=logging.DEBUG):
         int(node_id): (node_info["host"], node_info["port"])
         for node_id, node_info in nodes.items()
     }
+    print("All_Nodes: ", all_nodes)
     # Determine my host and port
-    if args.id not in all_nodes:
-        raise ValueError(f"Node ID {args.id} not found in cluster config")
+    #
+    print(f"Finding host, port of specified node_id: {args.node_id}")
+    node_id = int(args.node_id)
+    if node_id not in all_nodes:
+        raise ValueError(f"Node ID {args.node_id} not found in cluster config")
 
-    my_host, my_port = all_nodes[args.id]
+    my_host, my_port = all_nodes[node_id]
     # Build peers dict (all other nodes)
-    peers = {nid: addr for nid, addr in all_nodes.items() if nid != args.id}
+    peers = {nid: addr for nid, addr in all_nodes.items() if nid != node_id}
 
-    storage_path = f'paxos_manager_workspace/paxos_node_{args.id}.db'
+    workspace = pathlib.Path("paxos_manager_workspace")
+    workspace.mkdir(exist_ok=True)
+
+    storage_path = workspace / f"paxos_node_{args.node_id}.db"
+    # storage_path = f'paxos_manager_workspace/paxos_node_{args.node_id}.db'
+    storage_path=str(storage_path)
     node = PaxosNode(
-        args.id, 
-        logger=PaxosLogger(0, args.id, "logs", loglevel), 
-        node_count=len(peers), 
-        host='0.0.0.0', 
+        node_id, 
+        logger=PaxosLogger(0, node_id, "logs", loglevel), 
+        node_count=len(all_nodes), 
+        host=my_host,# '0.0.0.0', 
         port=my_port, 
         peers=peers, 
         storage_path=storage_path, 
@@ -299,7 +358,7 @@ async def main_loop(args, loglevel=logging.DEBUG):
     )
 
     await node.start()
-    print(f"Node {args.id} started at {my_host}:{my_port}, peers: {peers}")
+    print(f"Node {args.node_id} started at {my_host}:{my_port}, peers: {peers}")
 
     # --- REPL ---
     loop = asyncio.get_event_loop()
@@ -316,7 +375,7 @@ async def main_loop(args, loglevel=logging.DEBUG):
             break
 
         elif cmd == 'state':
-            print(f"Node {args.id}: running={node.running} leader={node.leader_id}")
+            print(f"Node {args.node_id}: running={node.running} leader={node.leader_id}")
             print(f"peers: {node.peers}")
             print(f"peer_state: {node.peer_state}")
             # print(f"  promised_id: {node.storage.promised_id}")
@@ -422,7 +481,8 @@ if __name__ == '__main__':
     parser.add_argument('--config', type=str, default="cluster_config.json")
     parser.add_argument('--allow-subprocess', action='store_true',
                         help="Allow subprocess IP scanning")
-    parser.add_argument("--veth", type=str, default="veth1")
+    # parser.add_argument("--veth", type=str, default="veth1")
+    parser.add_argument("--node_id", type=str, default="0")
     """
     if not subprocess_allowed:
         parser.add_argument('--id', type=int, required=True)
@@ -469,18 +529,23 @@ if __name__ == '__main__':
     parser.add_argument('--config', type=str, default="cluster_config.json")
     """
     args = parser.parse_args()
-# Detect local IPs
-    local_ips = get_local_ips_ns(args.veth)# allow_subprocess=args.allow_subprocess)
-    print(f"Local IPs: {local_ips}")
-    node_id = detect_id_from_config(args.config, local_ips)
+    # print("Detect local IPs...")
+    # local_ips = get_local_ips(args.veth)
+    # print(f"Local IPs: {local_ips}")
 
-    if node_id is None:
-        raise RuntimeError(
-            f"Could not match any local IP {local_ips} with nodes in {args.config}"
-        )
+    # print("Detect local IPs...")
+    # local_ips_ns = get_local_ips_ns(args.node_id)# allow_subprocess=args.allow_subprocess)
+    # print(f"Local IPs (ns): {local_ips_ns}")
 
-    args.id = node_id
-    print(f"Detected node ID: {args.id} (IPs: {local_ips})")
+    # node_id = detect_id_from_config(args.config, local_ips_ns)
+
+    # if node_id is None:
+    #     raise RuntimeError(
+    #         f"Could not match any local IP {local_ips_ns} with nodes in {args.config}"
+    #    )
+
+    # args.id = node_id
+    # print(f"Detected node ID: {args.id} (IPs: {local_ips_ns})")
     try:
         asyncio.run(main_loop(args))
     except KeyboardInterrupt:

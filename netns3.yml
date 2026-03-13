@@ -1,0 +1,47 @@
+- name: Discover namespaces
+  hosts: localhost
+  gather_facts: no
+
+  tasks:
+    - name: Get namespace list
+      command: ip netns list
+      register: ns_list
+
+    - name: Add namespaces as local-exec hosts
+      add_host:
+        name: "{{ item | regex_replace(' .*', '') }}"
+        groups: netns
+        ansible_connection: local
+        ansible_python_interpreter: /usr/bin/python3
+      loop: "{{ ns_list.stdout_lines }}"
+
+- name: Execute namespace health check
+  hosts: netns
+  gather_facts: no
+  strategy: free
+
+  tasks:
+    - name: Ping cluster bootstrap address
+      become: yes
+      command: >
+        ip netns exec {{ inventory_hostname }}
+        ping -c 1 -W 1 10.10.0.1
+
+# TODO instead of providing the veth, provide node_id, then auto-discover from config and validate
+- name: Start Paxos nodes asynchronously
+  hosts: netns
+  gather_facts: no
+  strategy: free
+
+  tasks:
+    - name: Launch Paxos node process
+      become: yes
+      async: 3600
+      poll: 0
+      command: >
+        ip netns exec {{ inventory_hostname }}
+        /usr/bin/python3 paxos_async.py 
+        --config cluster_subnet.json 
+        --allow-subprocess 
+        --veth veth1
+        --node {{ inventory_hostname }}

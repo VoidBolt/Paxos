@@ -1,0 +1,67 @@
+        PRAGMA journal_mode=WAL;
+What it changes
+SQLite normally uses rollback journaling. In that mode:
+Before modifying a page, SQLite writes the old version into a rollback journal.
+On crash, it restores from that journal.
+With WAL (Write-Ahead Logging):
+Writes go to a separate -wal file.
+The main database file is not overwritten immediately.
+On commit, changes are appended to the WAL.
+A checkpoint later merges WAL into the main DB.
+Why WAL is useful for Paxos storage
+1️⃣ Better crash semantics
+WAL ensures committed transactions are append-only until checkpointed. This reduces risk of partial page corruption.
+2️⃣ Better concurrency
+Readers don’t block writers.
+Writers don’t block readers.
+This is useful if your node has:
+A networking thread
+A disk thread
+Or monitoring reads
+3️⃣ Fewer fsyncs in practice
+WAL batches I/O more efficiently.
+Trade-offs
+Creates extra files (.db-wal, .db-shm)
+Slightly more complex lifecycle
+Requires filesystem support for shared memory
+For a distributed consensus node, WAL is generally the correct choice.
+PRAGMA synchronous=FULL;
+This one is more critical.
+It controls when SQLite calls fsync().
+Modes
+Mode	Durability Guarantee	fsync Frequency
+OFF	Unsafe	Minimal
+NORMAL	Crash-safe, may lose last transaction in some OS crash cases	Moderate
+FULL	Fully durable	High
+EXTRA	Even stricter WAL sync	Very High
+What FULL does
+SQLite ensures:
+All data is flushed to disk
+Journal/WAL is flushed
+File metadata is synced
+Write ordering is preserved
+If the machine loses power:
+A committed transaction is guaranteed durable.
+Why This Matters for Paxos
+An acceptor must never forget:
+A promised proposal ID
+An accepted value
+If it forgets, safety can be violated:
+You can get two different chosen values.
+That is a correctness break, not a performance issue.
+
+Therefore:
+    journal_mode = WAL
+    synchronous  = FULL
+is the safe default.
+
+Performance Impact
+You will pay:
+    More fsync() calls
+    Higher latency per write
+    Lower throughput under heavy write load
+But Paxos acceptors typically:
+    Write small rows
+    Don’t write at extreme frequency
+    Prioritize correctness over throughput
+

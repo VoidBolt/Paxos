@@ -1,0 +1,17 @@
+[project]
+name = "paxos"
+version = "0.1.0"
+dependencies = [
+    "numpy",
+    "protobuf",
+    "pytest",
+    "anyio",
+]
+
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+
+[tool.setuptools]
+package-dir = {"" = "src"}
