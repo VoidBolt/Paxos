@@ -17,6 +17,9 @@ src/paxos/proto/__init__.py
 src/paxos/proto/paxos_pb2.py
 src/paxos/strategies/multi_paxos.py
 src/paxos/strategies/single_decree.py
+src/paxos/utils/ILogger.py
+src/paxos/utils/formatting.py
+src/paxos/utils/networkLogger.py
 tests/test_fuzz.py
 tests/test_leader_failure.py
 tests/test_out_of_order_msgs.py

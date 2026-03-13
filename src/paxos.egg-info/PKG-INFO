@@ -5,3 +5,4 @@ Requires-Dist: numpy
 Requires-Dist: protobuf
 Requires-Dist: pytest
 Requires-Dist: anyio
+Requires-Dist: requests

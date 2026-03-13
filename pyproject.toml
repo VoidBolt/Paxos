@@ -6,6 +6,7 @@ dependencies = [
     "protobuf",
     "pytest",
     "anyio",
+    "requests"
 ]
 
 [build-system]
