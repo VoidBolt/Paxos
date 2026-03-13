@@ -7,7 +7,7 @@ sys.path.append(str(pathlib.Path(__file__).parent))
 from datetime import datetime
 import asyncio
 import argparse
-from paxos.paxos_node import NodeState, PaxosNode, propose_to
+from paxos.paxos_node import PaxosNode, propose_to
 from paxos.paxos_logger import PaxosLogger
 import logging
 import pathlib
@@ -22,32 +22,6 @@ import re
 # auto discover own ip in own namespace, redundant if config driven but convenient
 # import netifaces
 
-"""
-def get_local_ips(veth: str):
-    try:
-        cmd = ["ip", "addr", "show", veth]
-        print(f"Executing subprocess with cmd: {cmd}")
-        result = subprocess.run(
-            cmd,
-            capture_output=True,
-            text=True,
-            check=False
-        )
-
-        if result.returncode != 0:
-            return []
-
-        output = result.stdout
-
-        # Extract IPv4 addresses
-        ips = re.findall(r"inet (\d+\.\d+\.\d+\.\d+)/", output)
-
-        return ips
-
-    except Exception:
-        print("get_local_ips failed with an exception.")
-        return []
-"""
 def get_local_ips_ns(node_id):
     try:
         """sudo ip netns exec node2 ip addr show veth2"""
