@@ -224,7 +224,7 @@ def print_state(nodes: dict, node_id: int | None = None):
         print(f"Node {node.node_id}")
         print(f"  role={node.role.name}, state={node.state.name}, running={info['running']}, leader={node.leader_id}")
         # print(f"  consensus_reached={getattr(node.strategy, 'consensus_reached', False)}")
-        print(f"  paxos_in_progess={getattr(node, "paxos_in_progress", False)}")
+        print(f"  paxos_in_progess={getattr(node, 'paxos_in_progress', False)}")
         print(f"  peer_status: {_format_peer_status(node)}")
 
         slots = node.storage.all_slots() if hasattr(node.storage, "all_slots") else []
