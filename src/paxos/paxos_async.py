@@ -448,6 +448,7 @@ async def main_loop(args, loglevel=logging.DEBUG):
         return any(identity in ansible_host for identity in local_identities)
 
 
+    print(f"Nodes:\n {nodes}")
     input("press enter to continue...")
     my_node_id = None
 
