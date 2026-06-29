@@ -436,6 +436,7 @@ async def main_loop(args, loglevel=logging.DEBUG):
     #     print(f"{node_id:>3}  {host}")
     print(f"Nodes:\n {nodes}")
     input("Nodes should be defined now, press Enter to continue...")
+
     local_identities = {
         socket.getfqdn(),
         socket.gethostname(),
@@ -481,8 +482,18 @@ async def main_loop(args, loglevel=logging.DEBUG):
     my_port = nodes[my_node_id]["port"]
 
     # Build peers dict (all other nodes)
-    peers = {nid: addr for nid, addr in nodes.items() if nid != my_node_id}
+    peers_unsanitized = {nid: addr for nid, addr in nodes.items() if nid != my_node_id}
+    #peers = {}
+    #for peer in peers_unsanitized:
+    #    print(f"Peer_id:", peer, "Peer_data:", peer[])
+    #    peers[nid] = (peer["host"], peer["port"])
 
+    print(peers_unsanitized)
+    print(peers_unsanitized.items())
+    peers = {}
+    for nid, peer in peers_unsanitized.items():
+        peers[nid] = (peer["host"], peer["port"])
+        print(f"Node {my_node_id} check to Node {nid}, peer: {peer}!")
     print(peers)
     input("Look at peers, it should be host -> port, if not remap new data structure...")
 
