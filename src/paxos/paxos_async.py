@@ -461,15 +461,13 @@ async def main_loop(args, loglevel=logging.DEBUG):
         print(identities_list[0], identities_list[1])
         print(nid, info)
         for identity in identities_list:
-            if "-l" in identity:
-                identity = identity[:-2]
-            # stripped = identity.strip("-l")
-
             print("identity in host? -> ",identity, info["host"], identity in info["host"])
-
-            if identity in info["host"]:
+            if info["host"].split(".")[0] in identity:
                 print(f'Found Identity! -> {info["host"]}')
                 my_node_id = nid
+            # if identity in info["host"]:
+            #     print(f'Found Identity! -> {info["host"]}')
+            #     my_node_id = nid
 
     if my_node_id is None:
         print("My_node_id:", my_node_id)
