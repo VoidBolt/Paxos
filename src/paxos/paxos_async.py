@@ -427,7 +427,7 @@ async def main_loop(args, loglevel=logging.DEBUG):
         hostname = meta.get("ansible_host", host)
 
         nodes[node_id] = {
-            "host": host + ".ris.bht-berlin.de",
+            "host": host[:-2] + ".ris.bht-berlin.de",
             "hostname": hostname,
             "meta": meta,
             "port": 5000 + node_id,
