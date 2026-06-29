@@ -7,7 +7,7 @@
 
   tasks:
     - name: Execute command inside namespace
-      command: "/path/to/ns_exec.sh {{ ns_name }} {{ cmd }}"
+      command: "{{ lookup('env', 'HOME') }}/ns_exec.sh {{ ns_name }} {{ cmd }}"
       register: result
 
     - name: Show output

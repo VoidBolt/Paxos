@@ -1,0 +1,9 @@
+---
+- hosts: all
+  gather_facts: false
+  tasks:
+    - name: "Sending WOL package"
+      wakeonlan:
+        mac: "{{mac}}"
+        broadcast: wol.bht-berlin.de
+      delegate_to: localhost
