@@ -19,10 +19,15 @@ class AcceptorStorage:
 
         # --- enforce OS-level lock ---
         lock_path = f"{path}.lock"
+
+        print(f"NodeLock created at: {lock_path}")
         self.lock = NodeLock(lock_path)
         self.lock.acquire()
-
-        init_needed = not os.path.exists(path)
+        print("NodeLock acquired!")
+        
+        # Just making sure
+        init_needed = True # not os.path.exists(path)
+        print(f"Init needed? -> {init_needed}")
         self.path = path
         self.conn = sqlite3.connect(path, check_same_thread=False)
         self.conn.execute("PRAGMA journal_mode=WAL;")
@@ -33,6 +38,7 @@ class AcceptorStorage:
         self.decisions_sql = self._load_queries("decisions.sql")
 
         if init_needed:
+            print("Init is needed! Creating Tables...")
             self._init_db()
         if node_id is not None:
             self._check_or_set_node_id(node_id)
@@ -65,12 +71,25 @@ class AcceptorStorage:
     def _init_db(self):
         cur = self.conn.cursor()
         # Meta table for node identity and misc info
-        
+        print("Executing init_meta.sql ....")
         cur.execute(self._load_sql("init_meta.sql"))
+        print("Executed init_meta.sql! Meta-Table should exist now.")
+
+        print("Executing init_global_state.sql ....")
         cur.execute(self._load_sql("init_global_state.sql"))
+        print("Executed init_global_state.sql! Global-state-Table should exist now.")
+
+        print("Executing seed_global_state.sql ....")
         cur.execute(self._load_sql("seed_global_state.sql"))
+        print("Executed seed_global_state.sql! Global-state-Data should exist in the Table now.")
+
+        print("Executing init_slots.sql ....")
         cur.execute(self._load_sql("init_slots.sql"))
+        print("Executed init_slots.sql! Slots-Table should exist now.")
+
+        print("Executing init_decisions.sql ....")
         cur.execute(self._load_sql("init_decisions.sql"))
+        print("Executed init_decisions.sql! Decisions-Table should exist now.")
 
         self.conn.commit()
 
