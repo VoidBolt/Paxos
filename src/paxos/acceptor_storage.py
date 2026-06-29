@@ -1,11 +1,9 @@
 import os
-from pathlib import Path
+# from pathlib import Path
 import sqlite3
-
 import json
+from typing import Optional, Tuple, List
 # unique id -> unique db -> unique decisions
-from typing import Dict, Optional, Tuple, List
-
 from paxos.node_lock import NodeLock
 # -----------------
 # Persistent storage
@@ -14,7 +12,8 @@ from paxos.node_lock import NodeLock
 
 class AcceptorStorage:
     """SQLite-based storage for acceptor state, supporting single and multi-slot Paxos."""
-    SQL_DIR = Path(__file__).parent / "sql"
+    # SQL_DIR = Path(__file__).parent / "sql"
+    SQL_DIR = os.path.expanduser("~/Paxos/src/paxos/sql")
 
     def __init__(self, path: str, node_id: Optional[int] = None):
 
@@ -39,12 +38,12 @@ class AcceptorStorage:
             self._check_or_set_node_id(node_id)
 
     def _load_sql(self, filename: str) -> str:
-       with open(self.SQL_DIR / filename, "r", encoding="utf-8") as f:
+       with open(os.path.join(self.SQL_DIR,  filename), "r", encoding="utf-8") as f:
            return f.read()
 
     def _load_queries(self, filename: str) -> dict[str, str]:
         queries = {}
-        path = self.SQL_DIR / filename
+        path = os.path.join(self.SQL_DIR, filename)
         current_name = None
         buffer = []
 
@@ -236,9 +235,6 @@ class AcceptorStorage:
                 result[slot] = (json.loads(aid), json.loads(val))
         return result
 
-    def next_slot(self) -> int:
-        slots = self.all_slots()
-        return max(slots, default=0) + 1
     # -----------------
     # Decisions (chosen values for slots)
     # -----------------
