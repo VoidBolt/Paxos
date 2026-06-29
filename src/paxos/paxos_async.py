@@ -458,11 +458,13 @@ async def main_loop(args, loglevel=logging.DEBUG):
     identities_list = list(local_identities)
 
     for nid, info in nodes.items():
+        host_name = info["host"].split(".")[0]
+
         print(identities_list[0], identities_list[1])
         print(nid, info)
         for identity in identities_list:
-            print("identity in host? -> ",identity, info["host"], identity in info["host"])
-            if info["host"].split(".")[0] in identity:
+            print("host_name in identity? -> ", host_name, identity, host_name in identity)
+            if host_name in identity:
                 print(f'Found Identity! -> {info["host"]}')
                 my_node_id = nid
             # if identity in info["host"]:
