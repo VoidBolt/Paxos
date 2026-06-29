@@ -427,7 +427,7 @@ async def main_loop(args, loglevel=logging.DEBUG):
         hostname = meta.get("ansible_host", host)
 
         nodes[node_id] = {
-            "host": host,
+            "host": host + ".ris.bht-berlin.de",
             "hostname": hostname,
             "meta": meta,
             "port": 5000 + node_id,
@@ -453,11 +453,13 @@ async def main_loop(args, loglevel=logging.DEBUG):
     my_node_id = None
 
     for nid, info in nodes.items():
+        print(info)
         if matches(info["meta"]):
             my_node_id = nid
             break
 
     if my_node_id is None:
+        print("My_node_id:", my_node_id)
         raise RuntimeError(
             f"Could not identify this node. "
         )
