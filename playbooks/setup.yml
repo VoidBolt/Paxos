@@ -1,0 +1,12 @@
+- name: Setup Paxos environment
+  hosts: all
+  gather_facts: yes
+
+  vars_files:
+    - group_vars/all.yml
+
+  tasks:
+    - name: Create virtual environment and install dependencies
+      shell: make setup
+      args:
+        chdir: "{{ project_root }}"

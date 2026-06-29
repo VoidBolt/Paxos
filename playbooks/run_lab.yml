@@ -1,0 +1,28 @@
+- name: Run Paxos cluster on lab machines (no namespaces)
+  hosts: pool
+  gather_facts: no
+
+  vars_files:
+    - group_vars/all.yml
+
+  tasks:
+    - name: Stop existing Paxos process (clean restart)
+      shell: pkill -f paxos_async.py
+      ignore_errors: yes
+
+    - name: Ensure log directory exists
+      file:
+        path: /tmp/paxos_logs
+        state: directory
+        mode: "0755"
+
+    - name: Start Paxos node
+      shell: >
+        nohup
+        {{ project_root }}/venv/bin/python
+        {{ project_root }}/src/paxos/paxos_async.py
+        --config {{ project_root }}/{{ config_path }}
+        --node_id {{ node_id }}
+        > /tmp/paxos_logs/node_{{ node_id }}.log 2>&1 &
+      async: 0
+      poll: 0
