@@ -471,14 +471,14 @@ async def main_loop(args, loglevel=logging.DEBUG):
     workspace = pathlib.Path("paxos_manager_workspace")
     workspace.mkdir(exist_ok=True)
 
-    storage_path = workspace / f"paxos_node_{args.node_id}.db"
+    storage_path = workspace / f"paxos_node_{my_node_id}.db"
     # storage_path = f'paxos_manager_workspace/paxos_node_{args.node_id}.db'
     storage_path=str(storage_path)
     node = PaxosNode(
-        node_id, 
-        logger=PaxosLogger(0, node_id, "logs", loglevel), 
-        node_count=len(all_nodes), 
-        host = all_nodes[node_id][0],
+        my_node_id, 
+        logger=PaxosLogger(0, my_node_id, "logs", loglevel), 
+        node_count=len(nodes), 
+        host = my_host, # nodes[my_node_id][0],
         # host=my_host,# '0.0.0.0', 
         port=my_port, 
         peers=peers, 
@@ -487,7 +487,7 @@ async def main_loop(args, loglevel=logging.DEBUG):
     )
 
     await node.start()
-    print(f"Node {args.node_id} started at {my_host}:{my_port}, peers: {peers}")
+    print(f"Node {my_node_id} started at {my_host}:{my_port}, peers: {peers}")
 
     # --- REPL ---
     loop = asyncio.get_event_loop()
@@ -504,7 +504,7 @@ async def main_loop(args, loglevel=logging.DEBUG):
             break
 
         elif cmd == 'state':
-            print(f"Node {args.node_id}: running={node.running} leader={node.leader_id}")
+            print(f"Node {my_node_id}: running={node.running} leader={node.leader_id}")
             print(f"peers: {node.peers}")
             print(f"peer_state: {node.peer_state}")
             # print(f"  promised_id: {node.storage.promised_id}")
