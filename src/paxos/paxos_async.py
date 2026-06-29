@@ -443,20 +443,27 @@ async def main_loop(args, loglevel=logging.DEBUG):
     }
     print(f"local_identities: {local_identities}")
 
-    def matches(meta):
-        ansible_host = meta.get("ansible_host", "")
-        return any(identity in ansible_host for identity in local_identities)
+    # for node in nodes:
+    #    print(node, nodes[node])
+    # input("Wait...")
+
+    # def matches(meta):
+    #     ansible_host = meta.get("ansible_host", "")
+    #     return any(identity in ansible_host for identity in local_identities)
 
 
     print(f"Nodes:\n {nodes}")
     input("press enter to continue...")
     my_node_id = None
+    identities_list = list(local_identities)
 
     for nid, info in nodes.items():
-        print(info)
-        if matches(info["meta"]):
-            my_node_id = nid
-            break
+        print(identities_list[0], identities_list[1])
+        print(nid, info)
+        for identity in identities_list:
+            if identity in info["host"]:
+                print(f'Found Identity! -> {info["host"]}')
+                my_node_id = nid
 
     if my_node_id is None:
         print("My_node_id:", my_node_id)
