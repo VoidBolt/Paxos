@@ -20,9 +20,3 @@ src/paxos/strategies/single_decree.py
 src/paxos/utils/ILogger.py
 src/paxos/utils/formatting.py
 src/paxos/utils/networkLogger.py
-tests/test_fuzz.py
-tests/test_leader_failure.py
-tests/test_out_of_order_msgs.py
-tests/test_paxos_node.py
-tests/test_simultaneous_proposers.py
-tests/test_slot_conflict.py

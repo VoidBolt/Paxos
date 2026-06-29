@@ -2,6 +2,7 @@
 
 ID ?= 0
 CONFIG ?= cluster_subnet.json
+INVENTORY ?= inventories/inventory_lab.yml
 # REPO_URL := https://github.com/VoidBolt/Paxos.git
 VENV_DIR := venv
 
@@ -20,8 +21,11 @@ install: $(VENV_DIR)/bin/activate
 # Run the Paxos node
 run: install
 	. $(VENV_DIR)/bin/activate && \
-	python3 src/paxos/paxos_async.py --config $(CONFIG) --node_id $(ID)
+	python3 src/paxos/paxos_async.py --inventory $(INVENTORY)
 
+# run: install
+# 	. $(VENV_DIR)/bin/activate && \
+# 	python3 src/paxos/paxos_async.py --config $(CONFIG) --node_id $(ID)
 # Convenience: setup everything
 setup: install
 

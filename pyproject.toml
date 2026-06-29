@@ -6,7 +6,8 @@ dependencies = [
     "protobuf",
     "pytest",
     "anyio",
-    "requests"
+    "requests",
+    "pyyaml"
 ]
 
 [build-system]

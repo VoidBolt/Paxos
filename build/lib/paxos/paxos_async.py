@@ -449,23 +449,10 @@ async def main_loop(args, loglevel=logging.DEBUG):
 
 
     input("press enter to continue...")
-    my_node_id = None
 
-    for nid, info in nodes.items():
-        if matches(info["meta"]):
-            my_node_id = nid
-            break
-
-    if my_node_id is None:
-        raise RuntimeError(
-            f"Could not identify this node. "
-        )
-
-    my_host = nodes[my_node_id]["hostname"]
-    my_port = nodes[my_node_id]["port"]
-
+    my_host, my_port = nodes[node_id]
     # Build peers dict (all other nodes)
-    peers = {nid: addr for nid, addr in nodes.items() if nid != my_node_id}
+    peers = {nid: addr for nid, addr in nodes.items() if nid != node_id}
 
     workspace = pathlib.Path("paxos_manager_workspace")
     workspace.mkdir(exist_ok=True)
