@@ -461,7 +461,7 @@ async def main_loop(args, loglevel=logging.DEBUG):
         print(identities_list[0], identities_list[1])
         print(nid, info)
         for identity in identities_list:
-            if identity in info["host"]:
+            if identity.strip("-l") in info["host"]:
                 print(f'Found Identity! -> {info["host"]}')
                 my_node_id = nid
 
