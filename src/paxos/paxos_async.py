@@ -19,8 +19,11 @@ import subprocess
 import subprocess
 import re
 
+import yaml
+
 # auto discover own ip in own namespace, redundant if config driven but convenient
 # import netifaces
+
 
 def get_local_ips_ns(node_id):
     try:
@@ -278,33 +281,178 @@ async def wait_for_nodes_ready(nodes):
         handler.flush()
     print("\nAll nodes are ready. Starting REPL...\n")
 
+
+# LAB ENVIRONMENT, LOAD FROM YML-FILE
+# Determine local_hostname for resolution
+def get_local_hostname():
+    return socket.gethostname()
+
+# Resolution step to get the relevant node-id from the inventory
+def detect_node_id_from_inventory(inventory, host_to_id):
+    local = socket.gethostname()
+
+    # try exact match
+    if local in host_to_id:
+        return host_to_id[local]
+
+    # fallback: match FQDN
+    for host, meta in inventory.items():
+        if meta.get("ansible_host") == local:
+            return host_to_id[host]
+
+    return None
+
+# Lab Changes to load inventory.yml file instead
+def load_inventory(path: str):
+    with open(path, "r") as f:
+        inv = yaml.safe_load(f)
+
+    hosts = inv["all"]["hosts"]
+    print(f"Hosts:\n {hosts}")
+    # flatten children-hosts structure
+    all_hosts = {}
+
+    def walk(node, result=None):
+        if result is None:
+            result = {}
+
+        if node is None:
+            return result
+
+        if not isinstance(node, dict):
+            return result
+
+        # CASE 1: leaf host group
+        if "hosts" in node and isinstance(node["hosts"], dict):
+            for host, meta in node["hosts"].items():
+                if meta is None:
+                    continue
+                result[host] = meta
+            return result
+
+        # CASE 2: recurse children
+        children = node.get("children", {})
+        if isinstance(children, dict):
+            for child in children.values():
+                if isinstance(child, dict):
+                    walk(child, result)
+
+        return result
+
+    if not inv or "all" not in inv:
+        raise ValueError("Invalid inventory: missing 'all' root group")
+
+    print(inv["all"])
+    walk(inv["all"])
+
+    return all_hosts
+
+# Build relevant node-id mapping
+def build_node_mapping(inventory):
+    host_to_id = {}
+    id_to_host = {}
+
+    for host, meta in inventory.items():
+        node_id = meta.get("node_id")
+        if node_id is None:
+            raise ValueError(f"Missing node_id for host {host}")
+
+        host_to_id[host] = node_id
+        id_to_host[node_id] = host
+
+    return host_to_id, id_to_host
+
+def flatten_inventory(inv):
+    """
+    Converts nested Ansible inventory into flat host->meta dict.
+    Only keeps real hosts under 'hosts'.
+    """
+    result = {}
+
+    def walk(group):
+        if not isinstance(group, dict):
+            return
+
+        # collect hosts if present
+        hosts = group.get("hosts", {})
+        if isinstance(hosts, dict):
+            for h, meta in hosts.items():
+                result[h] = meta or {}
+
+        # recurse into children
+        children = group.get("children", {})
+        if isinstance(children, dict):
+            for child in children.values():
+                walk(child)
+
+    walk(inv.get("all", inv))
+    return result
+
+
+INVENTORY_FILE = "inventories/inventory_lab.yml"
+
+
+def walk_group(group, result):
+    if not isinstance(group, dict):
+        return
+
+    # collect hosts
+    hosts = group.get("hosts", {})
+    for host, attrs in hosts.items():
+        if isinstance(attrs, dict) and "node_id" in attrs:
+            result[host] = attrs["node_id"]
+
+    # recurse into children
+    children = group.get("children", {})
+    for child in children.values():
+        walk_group(child, result)
+
 async def main_loop(args, loglevel=logging.DEBUG):
     """
     Start a single Paxos node in distributed mode using a cluster config JSON file.
     The node automatically discovers its peers from the config.
     """
-    # --- Load cluster config ---
-    with open(args.config, "r") as f:
-        cfg = json.load(f)
 
-    # Build a dict of node_id -> (host, port)
-    nodes = cfg["nodes"]
-    print(nodes.items())
-    all_nodes = {
-        int(node_id): (node_info["host"], node_info["port"])
-        for node_id, node_info in nodes.items()
+    with open(args.inventory, "r") as f:
+        inventory = yaml.safe_load(f)
+
+    result = {}
+
+    walk_group(inventory.get("all", inventory), result)
+    nodes = {}
+
+    for host, node_id in sorted(result.items(), key=lambda x: x[1]):
+        meta = inventory.get("hosts", {}).get(host, {})  # safe fallback
+
+        hostname = meta.get("ansible_host", host)
+
+        nodes[node_id] = {
+            "host": host,
+            "hostname": hostname,
+            "meta": meta,
+            "port": 5000 + node_id,
+        }
+    # for host, node_id in sorted(result.items(), key=lambda x: x[1]):
+    #     print(f"{node_id:>3}  {host}")
+    print(f"Nodes:\n {nodes}")
+    input("Nodes should be defined now, press Enter to continue...")
+    local_identities = {
+        socket.getfqdn(),
+        socket.gethostname(),
+        socket.gethostname().split(".")[0],
     }
-    print("All_Nodes: ", all_nodes)
-    # Determine my host and port
-    #
-    print(f"Finding host, port of specified node_id: {args.node_id}")
-    node_id = int(args.node_id)
-    if node_id not in all_nodes:
-        raise ValueError(f"Node ID {args.node_id} not found in cluster config")
+    print(f"local_identities: {local_identities}")
 
-    my_host, my_port = all_nodes[node_id]
+    def matches(meta):
+        ansible_host = meta.get("ansible_host", "")
+        return any(identity in ansible_host for identity in local_identities)
+
+
+    input("press enter to continue...")
+
+    my_host, my_port = nodes[node_id]
     # Build peers dict (all other nodes)
-    peers = {nid: addr for nid, addr in all_nodes.items() if nid != node_id}
+    peers = {nid: addr for nid, addr in nodes.items() if nid != node_id}
 
     workspace = pathlib.Path("paxos_manager_workspace")
     workspace.mkdir(exist_ok=True)
@@ -316,7 +464,8 @@ async def main_loop(args, loglevel=logging.DEBUG):
         node_id, 
         logger=PaxosLogger(0, node_id, "logs", loglevel), 
         node_count=len(all_nodes), 
-        host=my_host,# '0.0.0.0', 
+        host = all_nodes[node_id][0],
+        # host=my_host,# '0.0.0.0', 
         port=my_port, 
         peers=peers, 
         storage_path=storage_path, 
@@ -443,12 +592,15 @@ def detect_id_from_config(config_path, local_ips):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    subprocess_allowed = True
-    parser.add_argument('--config', type=str, default="cluster_config.json")
+    subprocess_allowed = False
+    # old solution
+    # parser.add_argument('--config', type=str, default="cluster_config.json")
+    # parser.add_argument("--node_id", type=str, default="0")
     parser.add_argument('--allow-subprocess', action='store_true',
                         help="Allow subprocess IP scanning")
     # parser.add_argument("--veth", type=str, default="veth1")
-    parser.add_argument("--node_id", type=str, default="0")
+    parser.add_argument('--inventory', type=str, required=True)
+
     """
     if not subprocess_allowed:
         parser.add_argument('--id', type=int, required=True)
