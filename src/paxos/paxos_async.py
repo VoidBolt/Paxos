@@ -483,6 +483,9 @@ async def main_loop(args, loglevel=logging.DEBUG):
     # Build peers dict (all other nodes)
     peers = {nid: addr for nid, addr in nodes.items() if nid != my_node_id}
 
+    print(peers)
+    input("Look at peers, it should be host -> port, if not remap new data structure...")
+
     workspace = pathlib.Path("paxos_manager_workspace")
     workspace.mkdir(exist_ok=True)
 

@@ -422,6 +422,7 @@ class PaxosNode(PaxosNodeInterface):
         print(f"Node {self.node_id} Heart-start!")
         self.logger.info(f"Heartbeat loop started Node {self.node_id}. self._stopping? {self._stopping}",)
         self.logger.info(f"self.peers? {self.peers}",)
+
         try:
             while not self._stopping:
                 now = self.clock.now() # time.time()
