@@ -369,6 +369,8 @@ SUCCESS -> Some of the machines were still not reachable so i commented them out
 
 So I created a seperate "inventories/inventory_lab_min.yml" which contained all the machines reachable.
 
+I then removed myself (Machine: pool-HP49D14) from the inventory file, which allows me to be the proposer during execution, now at the current working stage there always has been a REPL execution established for the Server to keep running, I assume that ansible will just exit without allowing this to happen. So I will have to add some Mechanism for the instances to keep running after orchestration.
+
 Ping-Execution-Result:
 
 s80697@pool-hp49d14-l:~/Dokumente/Projekte/Paxos$ ansible-playbook -i inventories/inventory_lab_min.yml playbooks/ping_nodes_lab.yml

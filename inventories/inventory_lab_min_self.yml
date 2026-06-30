@@ -14,7 +14,7 @@ all:
     d138_row3:
       hosts:
         pool-HN49D14: { node_id: 6 }
-        # pool-HP49D14: { node_id: 7 }
+        pool-HP49D14: { node_id: 7 }
     d138:
       children:
         d138_row1:
