@@ -1,0 +1,289 @@
+all:
+  vars:
+    ansible_user: s80697
+    # ansible_ssh_pass: "{{ lookup('env', 'ANSIBLE_PASSWORD') }}" 
+    ansible_ssh_private_key_file: /test/id_ed25519
+  children:
+    d138_row1:
+      hosts:
+        pool-8P49D14: { node_id: 1 }
+        pool-8Q49D14: { node_id: 2 }
+        pool-9N49D14: { node_id: 3 }
+        pool-9P49D14: { node_id: 4 }
+        pool-9Q49D14: { node_id: 5 }
+        pool-BN49D14: { node_id: 6 }
+        pool-BP49D14: { node_id: 7 }
+    d138_row2:
+      hosts:
+        pool-BQ49D14: { node_id: 8 }
+        pool-CN49D14: { node_id: 9 }
+        pool-CP49D14: { node_id: 10 }
+        pool-CQ49D14: { node_id: 11 }
+        pool-DN49D14: { node_id: 12 }
+        pool-DP49D14: { node_id: 13 }
+        pool-JN49D14: { node_id: 14 }
+    d138_row3:
+      hosts:
+        pool-FP49D14: { node_id: 15 }
+        pool-GM49D14: { node_id: 16 }
+        pool-GN49D14: { node_id: 17 }
+        pool-GP49D14: { node_id: 18 }
+        pool-HM49D14: { node_id: 19 }
+        pool-HN49D14: { node_id: 20 }
+        pool-HP49D14: { node_id: 21 }
+        pool-JM49D14: { node_id: 22 }
+    d138:
+      children:
+        d138_row1:
+        d138_row2:
+        d138_row3:
+
+    pool:
+      children:
+        d138_row1:
+        d138_row2:
+        d138_row3:
+        d139_row1:
+        d139_row2:
+        d139_row3:
+    pool_spare:
+      hosts:
+        pool-JP49D14: null
+        # pool-FN49D14: null DEFEKT!
+    pool_test:
+      hosts:
+        pool-D919NY3:
+          ansible_host: pool-D919NY3.ris.bht-berlin.de
+          mac: 6c:3c:8c:47:26:f5
+          servicetag: D919NY3
+  hosts:
+    pool-1N49D14:
+      ansible_host: pool-1N49D14.ris.bht-berlin.de
+      expresscode: "3574659640"
+      mac: 20:88:10:82:2D:5F
+      servicetag: 1N49D14
+    pool-1P49D14:
+      ansible_host: pool-1P49D14.ris.bht-berlin.de
+      expresscode: "3695591992"
+      mac: 20:88:10:82:2F:51
+      servicetag: 1P49D14
+    pool-1Q49D14:
+      ansible_host: pool-1Q49D14.ris.bht-berlin.de
+      expresscode: "3756058168"
+      mac: 20:88:10:7E:F4:37
+      servicetag: 1Q49D14
+    pool-2N49D14:
+      ansible_host: pool-2N49D14.ris.bht-berlin.de
+      expresscode: "5751441976"
+      mac: 20:88:10:81:74:C4
+      servicetag: 2N49D14
+    pool-2P49D14:
+      ansible_host: pool-2P49D14.ris.bht-berlin.de
+      expresscode: "5872374328"
+      mac: 20:88:10:82:2E:18
+      servicetag: 2P49D14
+    pool-2Q49D14:
+      ansible_host: pool-2Q49D14.ris.bht-berlin.de
+      expresscode: "5932840504"
+      mac: 20:88:10:82:2F:D4
+      servicetag: 2Q49D14
+    pool-3N49D14:
+      ansible_host: pool-3N49D14.ris.bht-berlin.de
+      expresscode: "7928224312"
+      mac: 20:88:10:82:2E:E7
+      servicetag: 3N49D14
+    pool-3P49D14:
+      ansible_host: pool-3P49D14.ris.bht-berlin.de
+      expresscode: "8049156664"
+      mac: 20:88:10:82:2F:B5
+      servicetag: 3P49D14
+    pool-3Q49D14:
+      ansible_host: pool-3Q49D14.ris.bht-berlin.de
+      expresscode: "8109622840"
+      mac: 20:88:10:82:2D:5A
+      servicetag: 3Q49D14
+    pool-4N49D14:
+      ansible_host: pool-4N49D14.ris.bht-berlin.de
+      expresscode: "10105006648"
+      mac: 20:88:10:82:2D:D0
+      servicetag: 4N49D14
+    pool-4P49D14:
+      ansible_host: pool-4P49D14.ris.bht-berlin.de
+      expresscode: "10225939000"
+      mac: 20:88:10:82:2D:CE
+      servicetag: 4P49D14
+    pool-4Q49D14:
+      ansible_host: pool-4Q49D14.ris.bht-berlin.de
+      expresscode: "10286405176"
+      mac: 20:88:10:82:2E:77
+      servicetag: 4Q49D14
+    pool-5N49D14:
+      ansible_host: pool-5N49D14.ris.bht-berlin.de
+      expresscode: "12281788984"
+      mac: 20:88:10:82:2D:D6
+      servicetag: 5N49D14
+    pool-5P49D14:
+      ansible_host: pool-5P49D14.ris.bht-berlin.de
+      expresscode: "12402721336"
+      mac: 20:88:10:82:2F:52
+      servicetag: 5P49D14
+    pool-5Q49D14:
+      ansible_host: pool-5Q49D14.ris.bht-berlin.de
+      expresscode: "12463187512"
+      mac: 20:88:10:82:2E:31
+      servicetag: 5Q49D14
+    pool-6N49D14:
+      ansible_host: pool-6N49D14.ris.bht-berlin.de
+      expresscode: "14458571320"
+      mac: 20:88:10:82:2F:5D
+      servicetag: 6N49D14
+    pool-6P49D14:
+      ansible_host: pool-6P49D14.ris.bht-berlin.de
+      expresscode: "14579503672"
+      mac: 20:88:10:7E:F4:ED
+      servicetag: 6P49D14
+    pool-6Q49D14:
+      ansible_host: pool-6Q49D14.ris.bht-berlin.de
+      expresscode: "14639969848"
+      mac: 20:88:10:82:2D:53
+      servicetag: 6Q49D14
+    pool-7N49D14:
+      ansible_host: pool-7N49D14.ris.bht-berlin.de
+      expresscode: "16635353656"
+      mac: 20:88:10:82:2D:AE
+      servicetag: 7N49D14
+    pool-7P49D14:
+      ansible_host: pool-7P49D14.ris.bht-berlin.de
+      expresscode: "16756286008"
+      mac: 20:88:10:82:2D:61
+      servicetag: 7P49D14
+    pool-7Q49D14:
+      ansible_host: pool-7Q49D14.ris.bht-berlin.de
+      expresscode: "16816752184"
+      mac: 20:88:10:82:2D:2D
+      servicetag: 7Q49D14
+    pool-8N49D14:
+      ansible_host: pool-8N49D14.ris.bht-berlin.de
+      expresscode: "18812135992"
+      mac: 20:88:10:82:30:60
+      servicetag: 8N49D14
+    pool-8P49D14:
+      ansible_host: pool-8P49D14.ris.bht-berlin.de
+      expresscode: "18933068344"
+      mac: 20:88:10:82:2E:B8
+      servicetag: 8P49D14
+    pool-8Q49D14:
+      ansible_host: pool-8Q49D14.ris.bht-berlin.de
+      expresscode: "18993534520"
+      mac: 20:88:10:82:2F:57
+      servicetag: 8Q49D14
+    pool-9N49D14:
+      ansible_host: pool-9N49D14.ris.bht-berlin.de
+      expresscode: "20988918328"
+      mac: 20:88:10:82:2F:FC
+      servicetag: 9N49D14
+    pool-9P49D14:
+      ansible_host: pool-9P49D14.ris.bht-berlin.de
+      expresscode: "21109850680"
+      mac: 20:88:10:82:2F:91
+      servicetag: 9P49D14
+    pool-9Q49D14:
+      ansible_host: pool-9Q49D14.ris.bht-berlin.de
+      expresscode: "21170316856"
+      mac: 20:88:10:82:2D:7C
+      servicetag: 9Q49D14
+    pool-BN49D14:
+      ansible_host: pool-BN49D14.ris.bht-berlin.de
+      expresscode: "25342483000"
+      mac: 20:88:10:82:2F:ED
+      servicetag: BN49D14
+    pool-BP49D14:
+      ansible_host: pool-BP49D14.ris.bht-berlin.de
+      expresscode: "25463415352"
+      mac: 20:88:10:7E:F6:34
+      servicetag: BP49D14
+    pool-BQ49D14:
+      ansible_host: pool-BQ49D14.ris.bht-berlin.de
+      expresscode: "25523881528"
+      mac: 20:88:10:82:2F:D6
+      servicetag: BQ49D14
+    pool-CN49D14:
+      ansible_host: pool-CN49D14.ris.bht-berlin.de
+      expresscode: "27519265336"
+      mac: 20:88:10:82:30:47
+      servicetag: CN49D14
+    pool-CP49D14:
+      ansible_host: pool-CP49D14.ris.bht-berlin.de
+      expresscode: "27640197688"
+      mac: 20:88:10:7E:2D:32
+      servicetag: CP49D14
+    pool-CQ49D14:
+      ansible_host: pool-CQ49D14.ris.bht-berlin.de
+      expresscode: "27700663864"
+      mac: 20:88:10:82:2E:2E
+      servicetag: CQ49D14
+    pool-DN49D14:
+      ansible_host: pool-DN49D14.ris.bht-berlin.de
+      expresscode: "29696047672"
+      mac: 20:88:10:82:2F:4A
+      servicetag: DN49D14
+    pool-DP49D14:
+      ansible_host: pool-DP49D14.ris.bht-berlin.de
+      expresscode: "29816980024"
+      mac: 20:88:10:82:2D:48
+      servicetag: DP49D14
+    pool-FN49D14:
+      ansible_host: pool-FN49D14.ris.bht-berlin.de
+      expresscode: "34049612344"
+      mac: 20:88:10:82:2F:4E
+      servicetag: FN49D14
+    pool-FP49D14:
+      ansible_host: pool-FP49D14.ris.bht-berlin.de
+      expresscode: "34170544696"
+      mac: 20:88:10:7E:F3:8D
+      servicetag: FP49D14
+    pool-GM49D14:
+      ansible_host: pool-GM49D14.ris.bht-berlin.de
+      expresscode: "36165928504"
+      mac: 20:88:10:82:2F:82
+      servicetag: GM49D14
+    pool-GN49D14:
+      ansible_host: pool-GN49D14.ris.bht-berlin.de
+      expresscode: "36226394680"
+      mac: 20:88:10:82:2F:BF
+      servicetag: GN49D14
+    pool-GP49D14:
+      ansible_host: pool-GP49D14.ris.bht-berlin.de
+      expresscode: "36347327032"
+      mac: 20:88:10:7E:F2:CD
+      servicetag: GP49D14
+    pool-HM49D14:
+      ansible_host: pool-HM49D14.ris.bht-berlin.de
+      expresscode: "38342710840"
+      mac: 20:88:10:82:2D:58
+      servicetag: HM49D14
+    pool-HN49D14:
+      ansible_host: pool-HN49D14.ris.bht-berlin.de
+      expresscode: "38403177016"
+      mac: 20:88:10:82:2F:8E
+      servicetag: HN49D14
+    pool-HP49D14:
+      ansible_host: pool-HP49D14.ris.bht-berlin.de
+      expresscode: "38524109368"
+      mac: 20:88:10:7E:F4:D4
+      servicetag: HP49D14
+    pool-JM49D14:
+      ansible_host: pool-JM49D14.ris.bht-berlin.de
+      expresscode: "42696275512"
+      mac: 20:88:10:82:2D:BC
+      servicetag: JM49D14
+    pool-JN49D14:
+      ansible_host: pool-JN49D14.ris.bht-berlin.de
+      expresscode: "42756741688"
+      mac: 20:88:10:82:2F:4C
+      servicetag: JN49D14
+    pool-JP49D14:
+      ansible_host: pool-JP49D14.ris.bht-berlin.de
+      expresscode: "42877674040"
+      mac: 20:88:10:7E:2D:5B
+      servicetag: JP49D14

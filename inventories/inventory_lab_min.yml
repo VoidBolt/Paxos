@@ -1,75 +1,26 @@
 all:
   vars:
     ansible_user: s80697
-    ansible_ssh_pass: "{{ lookup('env', 'ANSIBLE_PASSWORD') }}" 
-    ansible_ssh_private_key_file: /tmp/id_ed25519
+    # ansible_ssh_pass: "{{ lookup('env', 'ANSIBLE_PASSWORD') }}" 
+    ansible_ssh_private_key_file: /test/id_ed25519
   children:
     d138_row1:
       hosts:
         pool-8P49D14: { node_id: 1 }
         pool-8Q49D14: { node_id: 2 }
         pool-9N49D14: { node_id: 3 }
-        pool-9P49D14: { node_id: 4 }
-        pool-9Q49D14: { node_id: 5 }
-        pool-BN49D14: { node_id: 6 }
-        pool-BP49D14: { node_id: 7 }
-    d138_row2:
-      hosts:
-        pool-BQ49D14: { node_id: 8 }
-        pool-CN49D14: { node_id: 9 }
-        pool-CP49D14: { node_id: 10 }
-        pool-CQ49D14: { node_id: 11 }
-        pool-DN49D14: { node_id: 12 }
-        pool-DP49D14: { node_id: 13 }
-        pool-JN49D14: { node_id: 14 }
+        pool-BN49D14: { node_id: 4 }
+        pool-BP49D14: { node_id: 5 }
     d138_row3:
       hosts:
-        pool-FP49D14: { node_id: 15 }
-        pool-GM49D14: { node_id: 16 }
-        pool-GN49D14: { node_id: 17 }
-        pool-GP49D14: { node_id: 18 }
-        pool-HM49D14: { node_id: 19 }
-        pool-HN49D14: { node_id: 20 }
-        pool-HP49D14: { node_id: 21 }
-        pool-JM49D14: { node_id: 22 }
+        pool-HN49D14: { node_id: 6 }
+        pool-HP49D14: { node_id: 7 }
     d138:
       children:
         d138_row1:
         d138_row2:
         d138_row3:
-    d139_row1:
-      hosts:
-        pool-1N49D14: { node_id: 23 }
-        pool-1P49D14: { node_id: 24 }
-        pool-1Q49D14: { node_id: 25 }
-        pool-2N49D14: { node_id: 26 }
-        pool-2P49D14: { node_id: 27 }
-        pool-2Q49D14: { node_id: 28 }
-        pool-3N49D14: { node_id: 29 }
-    d139_row2:
-      hosts:
-        pool-3P49D14: { node_id: 30 }
-        pool-3Q49D14: { node_id: 31 }
-        pool-4N49D14: { node_id: 32 }
-        pool-4P49D14: { node_id: 33 }
-        pool-4Q49D14: { node_id: 34 }
-        pool-5N49D14: { node_id: 35 }
-        pool-5P49D14: { node_id: 36 }
-    d139_row3:
-      hosts:
-        pool-5Q49D14: { node_id: 37 }
-        pool-6N49D14: { node_id: 38 }
-        pool-6P49D14: { node_id: 39 }
-        pool-6Q49D14: { node_id: 40 }
-        pool-7N49D14: { node_id: 41 }
-        pool-7P49D14: { node_id: 42 }
-        pool-7Q49D14: { node_id: 43 }
-        pool-8N49D14: { node_id: 44 }
-    d139:
-      children:
-        d139_row1:
-        d139_row2:
-        d139_row3:
+
     pool:
       children:
         d138_row1:
