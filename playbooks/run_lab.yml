@@ -8,16 +8,19 @@
     python_bin: /home/campus/s80697/Dokumente/Projekte/Paxos/venv/bin/python3
     venv_activate: /home/campus/s80697/Dokumente/Projekte/Paxos/venv/bin/activate
 
-    project_dir: /home/campus/s80697/Dokumente/Projekte/Paxos
+    project_dir: /home/campus/s80697/Dokumente/Projekte/Paxos/
 
   tasks:
     - name: Check project directory
       ansible.builtin.stat:
         path: /home/campus/s80697/Dokumente/Projekte/Paxos
-      register: project_dir
+      register: project_stat
 
-    - name: Show directory content
-      command: ls -la /home/campus/s80697/Dokumente/Projekte/Paxos
+    - debug:
+        var: project_stat
+
+    # - name: Show directory content
+    #  command: ls -la /home/campus/s80697/Dokumente/Projekte/Paxos
 
     - name: Show Makefile exists
       command: test -f /home/campus/s80697/Dokumente/Projekte/Paxos/Makefile
