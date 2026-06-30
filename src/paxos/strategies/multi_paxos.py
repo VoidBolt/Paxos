@@ -6,15 +6,17 @@ class MultiPaxos:
         self.log = {}       # slot -> chosen value
         self.next_slot = 1  # next available slot
 
-    async def propose(self, value: str, slot: int = None) -> bool:
+    async def propose(self, value: str, slot = None) -> bool:
         """Propose a value for the next available slot."""
         if slot is None:
             slot = self.next_slot
             self.next_slot += 1
-
         # delegate to node's Paxos coordinator
-        ok = await self.node.coordinate(value, slot=slot)
-
+        ok = await self.node.coordinate(
+            value, 
+            slot=slot, 
+            skip_prepare=self.node.is_active_leader()
+        )
         if ok:
             self.log[slot] = value
         return ok

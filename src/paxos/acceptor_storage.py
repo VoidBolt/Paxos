@@ -1,4 +1,5 @@
 import os
+from importlib.resources import files
 # from pathlib import Path
 import sqlite3
 import json
@@ -13,8 +14,9 @@ from paxos.node_lock import NodeLock
 class AcceptorStorage:
     """SQLite-based storage for acceptor state, supporting single and multi-slot Paxos."""
     # SQL_DIR = Path(__file__).parent / "sql"
-    SQL_DIR = os.path.expanduser("~/Paxos/src/paxos/sql")
-
+    # SQL_DIR = os.path.expanduser("~/Paxos/src/paxos/sql")
+    # Some executions like with netns require root, which differs from non root execution and doesnt point to the correct directory -> so we need this:
+    SQL_DIR = files("paxos").joinpath("sql")
     def __init__(self, path: str, node_id: Optional[int] = None):
 
         # --- enforce OS-level lock ---
@@ -43,10 +45,14 @@ class AcceptorStorage:
         if node_id is not None:
             self._check_or_set_node_id(node_id)
 
-    def _load_sql(self, filename: str) -> str:
-       with open(os.path.join(self.SQL_DIR,  filename), "r", encoding="utf-8") as f:
-           return f.read()
+    # def _load_sql(self, filename: str) -> str:
+    #    with open(os.path.join(self.SQL_DIR,  filename), "r", encoding="utf-8") as f:
+    #        return f.read()
 
+    def _load_sql(self, filename: str) -> str:
+        """Load an entire SQL file."""
+        return self.SQL_DIR.joinpath(filename).read_text(encoding="utf-8")
+    """
     def _load_queries(self, filename: str) -> dict[str, str]:
         queries = {}
         path = os.path.join(self.SQL_DIR, filename)
@@ -67,7 +73,28 @@ class AcceptorStorage:
             queries[current_name] = "".join(buffer).strip()
 
         return queries
+    """
+    def _load_queries(self, filename: str) -> dict[str, str]:
+        """Load a SQL file containing multiple named queries separated by '-- name'."""
+        queries = {}
+        current_name = None
+        buffer = []
 
+        with self.SQL_DIR.joinpath(filename).open("r", encoding="utf-8") as f:
+            for line in f:
+                if line.startswith("--"):
+                    if current_name is not None:
+                        queries[current_name] = "".join(buffer).strip()
+                    current_name = line[2:].strip()
+                    buffer.clear()
+                else:
+                    buffer.append(line)
+
+        if current_name is not None:
+            queries[current_name] = "".join(buffer).strip()
+
+        return queries
+    """
     def _init_db(self):
         cur = self.conn.cursor()
         # Meta table for node identity and misc info
@@ -92,7 +119,22 @@ class AcceptorStorage:
         print("Executed init_decisions.sql! Decisions-Table should exist now.")
 
         self.conn.commit()
+    """
+    def _init_db(self):
+        cur = self.conn.cursor()
 
+        for filename, description in [
+            ("init_meta.sql", "Meta table"),
+            ("init_global_state.sql", "Global-state table"),
+            ("seed_global_state.sql", "Global-state seed"),
+            ("init_slots.sql", "Slots table"),
+            ("init_decisions.sql", "Decisions table"),
+        ]:
+            print(f"Executing {filename}...")
+            cur.execute(self._load_sql(filename))
+            print(f"Executed {filename}! {description} initialized.")
+
+        self.conn.commit()
     """
     def _check_or_set_node_id(self, node_id: int):
         cur = self.conn.cursor()

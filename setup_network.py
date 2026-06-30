@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 import subprocess
 
-NUM_NODES = 44
+NUM_NODES = 4 # 44
 SUBNET = "10.10.0."
 BRIDGE_NAME = "br0"
 
@@ -28,7 +28,7 @@ def create_bridge():
         print(f"Bridge {BRIDGE_NAME} already exists")
 
 def setup_node(i):
-    ns = f"node{i}"
+    ns =  f"node{i}"# f"{SUBNET}{i}"#
     veth_ns = f"veth{i}"
     veth_br = f"veth{i}-br"
     ip_addr = f"{SUBNET}{i}/24"
@@ -57,7 +57,7 @@ def setup_node(i):
 def test_connectivity():
     print("\nTesting connectivity (first 5 nodes for brevity)...")
     for i in range(0, min(NUM_NODES, 5)):
-        ns = f"node{i}"
+        ns = f"node{i}" # f"{SUBNET}{i}"
         for j in range(0, min(NUM_NODES, 5)):
             if i != j:
                 ip = f"{SUBNET}{j}"

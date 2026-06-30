@@ -1,0 +1,16 @@
+---
+- name: Start Paxos nodes
+  hosts: cluster
+  gather_facts: false
+  become: true
+
+  tasks:
+    - name: Launch Paxos
+      shell: |
+        sudo ip netns exec node{{ node_id }} \
+          nohup python src/paxos/paxos_async.py \
+          --inventory inventories/inventory_netns.yml \
+          --netns {{ node_id }} \
+          > /tmp/node{{ node_id }}.log 2>&1 &
+      async: 86400
+      poll: 0

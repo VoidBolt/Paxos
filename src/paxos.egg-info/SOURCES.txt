@@ -15,6 +15,15 @@ src/paxos.egg-info/requires.txt
 src/paxos.egg-info/top_level.txt
 src/paxos/proto/__init__.py
 src/paxos/proto/paxos_pb2.py
+src/paxos/sql/decisions.sql
+src/paxos/sql/global_state.sql
+src/paxos/sql/init_decisions.sql
+src/paxos/sql/init_global_state.sql
+src/paxos/sql/init_meta.sql
+src/paxos/sql/init_slots.sql
+src/paxos/sql/meta.sql
+src/paxos/sql/seed_global_state.sql
+src/paxos/sql/slots.sql
 src/paxos/strategies/multi_paxos.py
 src/paxos/strategies/single_decree.py
 src/paxos/utils/ILogger.py

@@ -3,13 +3,14 @@ import subprocess
 
 NUM_NODES = 44
 BRIDGE_NAME = "br0"
+SUBNET = "10.10.0."
 
 def run(cmd):
     subprocess.run(cmd, shell=True, check=False)
 
 # Delete namespaces
 for i in range(NUM_NODES):
-    ns = f"node{i}"
+    ns = f"node{i}"# f"{SUBNET}{i}"#
     run(f"sudo ip netns del {ns}")
 
 # Delete veths (host side)

@@ -1,0 +1,23 @@
+all:
+  children:
+    cluster:
+      vars:
+        ansible_connection: local
+      hosts:
+        10.10.0.1: { node_id: 1 }
+        10.10.0.2: { node_id: 2 }
+        10.10.0.3: { node_id: 3 }
+        10.10.0.4: { node_id: 4 }
+        10.10.0.5: { node_id: 5 }
+        10.10.0.6: { node_id: 6 }
+        10.10.0.7: { node_id: 7 }
+        10.10.0.8: { node_id: 8 }
+        10.10.0.9: { node_id: 9 }
+        10.10.0.10: { node_id: 10 }
+        10.10.0.11: { node_id: 11 }
+        10.10.0.12: { node_id: 12 }
+        10.10.0.13: { node_id: 13 }
+        10.10.0.14: { node_id: 14 }
+        10.10.0.15: { node_id: 15 }
+        10.10.0.16: { node_id: 16 }
+        10.10.0.17: { node_id: 17 }

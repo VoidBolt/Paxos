@@ -38,6 +38,8 @@ message PaxosMessage {
     SINGLE_DECISION = 15;
     MULTI_DECREE_RESULT = 16;
     ERR = 17;
+    FAST_PATH = 18;
+    FAST_PATH_OK = 19;
   }
 
   Type type = 1;

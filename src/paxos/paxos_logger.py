@@ -9,7 +9,7 @@ from datetime import datetime, timezone
 import logging
 # Logger Interface like .Net ILogger
 # from ILogger import ILogger
-from utils.networkLogger import NetworkLogger
+from paxos.utils.networkLogger import NetworkLogger
 from logging.handlers import RotatingFileHandler
 
 # Configure logging
@@ -77,12 +77,15 @@ class PaxosLogger(NetworkLogger):
         super(PaxosLogger, self).__init__(base_url=base_url, verbose=verbose, post=post)
         print(f"PaxosLogger init with base_url: {base_url}")
         self._round = round
-    
+            # --- Ensure logs directory exists ---
+        self.log_dir = log_dir
+        os.makedirs(self.log_dir, exist_ok=True)
         # --- Set up internal Python logger ---
         self.node_id = node_id # or "global"
-        filename=f"paxosresult_{self.node_id}.csv"
         self.entries = []
-        self.filename = filename
+
+        filename = f"paxosresult_{self.node_id}.csv"
+        self.filename = os.path.join(self.log_dir, filename)
         self._logger = _make_logger(node_id=self.node_id, log_dir=log_dir, console_log_level=console_log_level)
 
     @property
@@ -118,8 +121,11 @@ class PaxosLogger(NetworkLogger):
         )
         self.entries.append(entry)
         
-    def save_to_csv(self):
-        with open(self.filename, 'w', newline='') as file:
+    def save_to_csv(self, proposal_id=None):
+        pid = proposal_id if proposal_id is not None else "unknown"
+        identifiable_log = self.filename.split(".")[0] + f"_{pid}." + self.filename.split(".")[1]
+        print(f"Saving CSV to {identifiable_log}")
+        with open(identifiable_log, 'w', newline='') as file:
             writer = csv.writer(file)
             writer.writerow(['Round', 'Timestamp', 'From Node ID', 'From Node Role', 'From Node State', 'To Node ID', 'To Node Role', 'To Node State', 'Action', 'Action Value', 'Consensus Value', 'Consensus Reached'])
             for entry in self.entries:

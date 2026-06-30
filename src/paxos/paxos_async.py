@@ -20,10 +20,9 @@ import subprocess
 import re
 
 import yaml
-
+LOGLEVEL = logging.INFO
 # auto discover own ip in own namespace, redundant if config driven but convenient
 # import netifaces
-
 
 def get_local_ips_ns(node_id):
     try:
@@ -302,118 +301,27 @@ def detect_node_id_from_inventory(inventory, host_to_id):
 
     return None
 
-# Lab Changes to load inventory.yml file instead
-def load_inventory(path: str):
-    with open(path, "r") as f:
-        inv = yaml.safe_load(f)
 
-    hosts = inv["all"]["hosts"]
-    print(f"Hosts:\n {hosts}")
-    # flatten children-hosts structure
-    all_hosts = {}
 
-    def walk(node, result=None):
-        if result is None:
-            result = {}
 
-        if node is None:
-            return result
+def load_yml_config(path, isnetns=False):
 
-        if not isinstance(node, dict):
-            return result
-
-        # CASE 1: leaf host group
-        if "hosts" in node and isinstance(node["hosts"], dict):
-            for host, meta in node["hosts"].items():
-                if meta is None:
-                    continue
-                result[host] = meta
-            return result
-
-        # CASE 2: recurse children
-        children = node.get("children", {})
-        if isinstance(children, dict):
-            for child in children.values():
-                if isinstance(child, dict):
-                    walk(child, result)
-
-        return result
-
-    if not inv or "all" not in inv:
-        raise ValueError("Invalid inventory: missing 'all' root group")
-
-    print(inv["all"])
-    walk(inv["all"])
-
-    return all_hosts
-
-# Build relevant node-id mapping
-def build_node_mapping(inventory):
-    host_to_id = {}
-    id_to_host = {}
-
-    for host, meta in inventory.items():
-        node_id = meta.get("node_id")
-        if node_id is None:
-            raise ValueError(f"Missing node_id for host {host}")
-
-        host_to_id[host] = node_id
-        id_to_host[node_id] = host
-
-    return host_to_id, id_to_host
-
-def flatten_inventory(inv):
-    """
-    Converts nested Ansible inventory into flat host->meta dict.
-    Only keeps real hosts under 'hosts'.
-    """
-    result = {}
-
-    def walk(group):
+    def walk_group(group, result):
         if not isinstance(group, dict):
             return
 
-        # collect hosts if present
+        # collect hosts
         hosts = group.get("hosts", {})
-        if isinstance(hosts, dict):
-            for h, meta in hosts.items():
-                result[h] = meta or {}
+        for host, attrs in hosts.items():
+            if isinstance(attrs, dict) and "node_id" in attrs:
+                result[host] = attrs["node_id"]
 
         # recurse into children
         children = group.get("children", {})
-        if isinstance(children, dict):
-            for child in children.values():
-                walk(child)
+        for child in children.values():
+            walk_group(child, result)
 
-    walk(inv.get("all", inv))
-    return result
-
-
-INVENTORY_FILE = "inventories/inventory_lab.yml"
-
-
-def walk_group(group, result):
-    if not isinstance(group, dict):
-        return
-
-    # collect hosts
-    hosts = group.get("hosts", {})
-    for host, attrs in hosts.items():
-        if isinstance(attrs, dict) and "node_id" in attrs:
-            result[host] = attrs["node_id"]
-
-    # recurse into children
-    children = group.get("children", {})
-    for child in children.values():
-        walk_group(child, result)
-
-async def main_loop(args, loglevel=logging.DEBUG):
-    """
-    Start a single Paxos node in distributed mode using a cluster config JSON file.
-    The node automatically discovers its peers from the config.
-    """
-
-    with open(args.inventory, "r") as f:
+    with open(path, "r") as f:
         inventory = yaml.safe_load(f)
 
     result = {}
@@ -427,50 +335,43 @@ async def main_loop(args, loglevel=logging.DEBUG):
         hostname = meta.get("ansible_host", host)
 
         nodes[node_id] = {
-            "host": host + ".ris.bht-berlin.de",
+            "host": host + (".ris.bht-berlin.de" if not isnetns else ""),
             "hostname": hostname,
             "meta": meta,
             "port": 5000 + node_id,
         }
-    # for host, node_id in sorted(result.items(), key=lambda x: x[1]):
-    #     print(f"{node_id:>3}  {host}")
-    print(f"Nodes:\n {nodes}")
-    input("Nodes should be defined now, press Enter to continue...")
+    # print(f"Nodes:\n {nodes}")
+    # kind of a workaround to our detection method with the yml file, in case of netns we have to specify the execution node
+    if not isnetns:
+        local_identities = {
+            socket.getfqdn(),
+            socket.gethostname(),
+            socket.gethostname().split(".")[0],
+        }
+    else: 
+        local_identities = get_local_ips_ns(isnetns)
 
-    local_identities = {
-        socket.getfqdn(),
-        socket.gethostname(),
-        socket.gethostname().split(".")[0],
-    }
     print(f"local_identities: {local_identities}")
+    # print(f"Nodes:\n {nodes}")
 
-    # for node in nodes:
-    #    print(node, nodes[node])
-    # input("Wait...")
-
-    # def matches(meta):
-    #     ansible_host = meta.get("ansible_host", "")
-    #     return any(identity in ansible_host for identity in local_identities)
-
-
-    print(f"Nodes:\n {nodes}")
-    input("press enter to continue...")
     my_node_id = None
     identities_list = list(local_identities)
 
     for nid, info in nodes.items():
-        host_name = info["host"].split(".")[0]
-
-        print(identities_list[0], identities_list[1])
-        print(nid, info)
-        for identity in identities_list:
-            print("host_name in identity? -> ", host_name, identity, host_name in identity)
-            if host_name.lower() in identity:
-                print(f'Found Identity! -> {info["host"]}')
-                my_node_id = nid
-            # if identity in info["host"]:
-            #     print(f'Found Identity! -> {info["host"]}')
-            #     my_node_id = nid
+        if not isnetns:
+            host_name = info["host"].split(".")[0]
+            # print(identities_list[0], identities_list[1])
+            # print(nid, info)
+            for identity in identities_list:
+                # print("host_name in identity? -> ", host_name, identity, host_name in identity)
+                if host_name.lower() in identity:
+                    # print(f'Found Identity! -> {info["host"]}')
+                    my_node_id = nid
+        else:
+            host_name = info["host"]
+            for identity in identities_list:
+                if host_name == identity:
+                    my_node_id = nid
 
     if my_node_id is None:
         print("My_node_id:", my_node_id)
@@ -483,19 +384,22 @@ async def main_loop(args, loglevel=logging.DEBUG):
 
     # Build peers dict (all other nodes)
     peers_unsanitized = {nid: addr for nid, addr in nodes.items() if nid != my_node_id}
-    #peers = {}
-    #for peer in peers_unsanitized:
-    #    print(f"Peer_id:", peer, "Peer_data:", peer[])
-    #    peers[nid] = (peer["host"], peer["port"])
-
-    print(peers_unsanitized)
-    print(peers_unsanitized.items())
+    # print(peers_unsanitized)
+    # print(peers_unsanitized.items())
     peers = {}
     for nid, peer in peers_unsanitized.items():
         peers[nid] = (peer["host"], peer["port"])
-        print(f"Node {my_node_id} check to Node {nid}, peer: {peer}!")
-    print(peers)
-    input("Look at peers, it should be host -> port, if not remap new data structure...")
+        # print(f"Node {my_node_id} check to Node {nid}, peer: {peer}!")
+    # print(peers)
+    # input("Look at peers, it should be host -> port, if not remap new data structure...")
+    return my_host, my_port, my_node_id, peers, nodes
+
+async def main_loop(args, loglevel=LOGLEVEL):
+    """
+    Start a single Paxos node in distributed mode using a cluster config JSON file.
+    The node automatically discovers its peers from the config.
+    """
+    my_host, my_port, my_node_id, peers, nodes = load_yml_config(args.inventory, args.netns)
 
     workspace = pathlib.Path("paxos_manager_workspace")
     workspace.mkdir(exist_ok=True)
@@ -518,26 +422,18 @@ async def main_loop(args, loglevel=logging.DEBUG):
     await node.start()
     print(f"Node {my_node_id} started at {my_host}:{my_port}, peers: {peers}")
 
-    # --- REPL ---
-    loop = asyncio.get_event_loop()
-    print("Commands: propose <value> <slot> | state | exit")
+    if not args.repl:
+        print("NO REPL!")
+        print("Creating Test-Cases to Validate functionality:")
+    
+        # Wait until leader has been chosen, since this is an async process we need to guard
+        while node.leader_id == -1:
+            await asyncio.sleep(0.1)  # check every 100 ms
 
-    while True:
-        line = await loop.run_in_executor(None, input, "> ")
-        if not line:
-            continue
-        parts = line.strip().split()
-        cmd = parts[0]
+        if args.proposal:
+            for value, slot in args.proposal:
+                await node.coordinate(value, int(slot))
 
-        if cmd == 'exit':
-            break
-
-        elif cmd == 'state':
-            print(f"Node {my_node_id}: running={node.running} leader={node.leader_id}")
-            print(f"peers: {node.peers}")
-            print(f"peer_state: {node.peer_state}")
-            # print(f"  promised_id: {node.storage.promised_id}")
-            
             accepted = node.storage.all_accepted()
             if not accepted:
                 print("  No slots have reached consensus yet.")
@@ -545,23 +441,56 @@ async def main_loop(args, loglevel=logging.DEBUG):
                 print("  Slots with consensus:")
                 for slot, (aid, val) in sorted(accepted.items()):
                     print(f"    slot {slot}: accepted_id={aid}, accepted_value={val}")
+        await asyncio.Event().wait() 
+    else:
+        print("REPL!")
+        # print("Attempting to create a control server socket! (Async)")
+        # asyncio.create_task(node.start_control_server())
 
-        elif cmd == 'propose' and len(parts) == 1:
-            print("Usage: propose <value> <slot>")
-        elif cmd == 'propose':
-            if len(parts) != 3:
-                print("Usage: propose <value> <slot>")
+        # --- REPL ---
+        loop = asyncio.get_event_loop()
+        print("Commands: propose <value> <slot> | state | exit")
+
+        while True:
+            line = await loop.run_in_executor(None, input, "> ")
+            if not line:
                 continue
+            parts = line.strip().split()
+            cmd = parts[0]
 
-            value = parts[1]
-            slot = int(parts[2])
+            if cmd == 'exit':
+                break
 
-            print(f"Proposing value={value} for slot={slot} to peers: {peers}")
-            await propose_to({"node": node}, value, slot, use_worker=True)
-        else:
-            print('unknown command')
+            elif cmd == 'state':
+                print(f"Node {my_node_id}: running={node.running} leader={node.leader_id}")
+                print(f"peers: {node.peers}")
+                print(f"peer_state: {node.peer_state}")
+                # print(f"  promised_id: {node.storage.promised_id}")
+                
+                accepted = node.storage.all_accepted()
+                if not accepted:
+                    print("  No slots have reached consensus yet.")
+                else:
+                    print("  Slots with consensus:")
+                    for slot, (aid, val) in sorted(accepted.items()):
+                        print(f"    slot {slot}: accepted_id={aid}, accepted_value={val}")
 
-    await node.stop()
+            elif cmd == 'propose' and len(parts) == 1:
+                print("Usage: propose <value> <slot>")
+            elif cmd == 'propose':
+                if len(parts) != 3:
+                    print("Usage: propose <value> <slot>")
+                    continue
+
+                value = parts[1]
+                slot = int(parts[2])
+
+                print(f"Proposing value={value} for slot={slot} to peers: {peers}")
+                await propose_to({"node": node}, value, slot, use_worker=True)
+            else:
+                print('unknown command')
+
+        await node.stop()
 
 def get_primary_ip():
     """Get the primary non-loopback IPv4 of the machine without subprocess."""
@@ -635,78 +564,20 @@ def detect_id_from_config(config_path, local_ips):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    subprocess_allowed = False
-    # old solution
-    # parser.add_argument('--config', type=str, default="cluster_config.json")
-    # parser.add_argument("--node_id", type=str, default="0")
-    parser.add_argument('--allow-subprocess', action='store_true',
-                        help="Allow subprocess IP scanning")
-    # parser.add_argument("--veth", type=str, default="veth1")
     parser.add_argument('--inventory', type=str, required=True)
+    parser.add_argument("--netns", type=str, default="")
+    parser.add_argument("--repl", action="store_true")
+    
 
-    """
-    if not subprocess_allowed:
-        parser.add_argument('--id', type=int, required=True)
-    else:
-        import subprocess
-        import platform       
-        def get_ip_address():
-            # Return primary IP address using subprocess calls.
-            try:
-                system = platform.system().lower()
+    parser.add_argument(
+        "--proposal",
+        action="append",
+        nargs=2,
+        metavar=("VALUE", "SLOT"),
+        help="Proposal in form: --proposal <value> <slot>"
+    )
 
-                if "windows" in system:
-                    # Windows: use ipconfig
-                    output = subprocess.check_output("ipconfig", text=True)
-                    for line in output.splitlines():
-                        line = line.strip()
-                        if line.startswith("IPv4 Address") or "IPv4" in line:
-                            ip = line.split(":")[-1].strip()
-                            return ip
-
-                else:
-                    # Linux / macOS: try hostname -I first
-                    try:
-                        ip = subprocess.check_output("hostname -I", shell=True, text=True).strip()
-                        if ip:
-                            return ip.split()[0]
-                    except:
-                        pass
-
-                    # Fallback: ip addr
-                    output = subprocess.check_output("ip addr", text=True)
-                    for line in output.splitlines():
-                        line = line.strip()
-                        if line.startswith("inet ") and "127.0.0.1" not in line:
-                            ip = line.split()[1].split("/")[0]
-                            return ip
-
-            except Exception as e:
-                return None
-
-            return None
-    # parser.add_argument('--port', type=int, required=True)
-    # parser.add_argument('--peers', type=str, default='')
-    parser.add_argument('--config', type=str, default="cluster_config.json")
-    """
     args = parser.parse_args()
-    # print("Detect local IPs...")
-    # local_ips = get_local_ips(args.veth)
-    # print(f"Local IPs: {local_ips}")
-
-    # print("Detect local IPs...")
-    # local_ips_ns = get_local_ips_ns(args.node_id)# allow_subprocess=args.allow_subprocess)
-    # print(f"Local IPs (ns): {local_ips_ns}")
-
-    # node_id = detect_id_from_config(args.config, local_ips_ns)
-
-    # if node_id is None:
-    #     raise RuntimeError(
-    #         f"Could not match any local IP {local_ips_ns} with nodes in {args.config}"
-    #    )
-
-    # args.id = node_id
-    # print(f"Detected node ID: {args.id} (IPs: {local_ips_ns})")
     try:
         asyncio.run(main_loop(args))
     except KeyboardInterrupt:
