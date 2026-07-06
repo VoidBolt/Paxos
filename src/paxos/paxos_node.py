@@ -411,12 +411,10 @@ class PaxosNode(PaxosNodeInterface):
                 f"Traceback:\n{tb}"
             )
 
-        self.logger.info("Heartbeat loop stopped.")
-        print(f"HEARTBEAT LOOP STOPPED.")
+        self.lpgger.info(f"HEARTBEAT LOOP STOPPED.")
 
     async def on_heartbeat(self, msg: PaxosMessage) -> dict:
         time_received = self.clock.now() # time.time()
-        # print(f"Node {self.node_id} received Heartbeat from Node {msg.sender_id}")
         self.logger.debug(f"Node {self.node_id} received Heartbeat from Node {msg.sender_id}")
         self.logger.debug(f"Node {self.node_id} -> {msg}")
 
@@ -442,13 +440,12 @@ class PaxosNode(PaxosNodeInterface):
         latest = self.storage.get_latest_proposal_id()
         my_pid = latest if latest is not None else 0
 
-        # print("Last Decision:", last_decision)
+        self.logger.info("Last Decision:", last_decision)
         if not last_decision:
 
 
             require_sync = not self.paxos_in_progress and msg.proposal_id>my_pid # and msg.proposal_id > my_pid
             self.logger.debug(f"Node {self.node_id} Heartbeat from Node {msg.sender_id} with proposal_id: {msg.proposal_id}, my_pid: {my_pid}, checking if reconciliation is required...require_sync?{require_sync}")
-            # print(f"Node {self.node_id} Heartbeat from Node {msg.sender_id} with proposal_id: {msg.proposal_id}, my_pid: {my_pid}, checking if reconciliation is required...require_sync?{require_sync}")
             self.logger.info(
                 f"[Node {self.node_id}] Detected higher proposal ID "
                 f"{msg.proposal_id} from Node {msg.sender_id}"
@@ -458,11 +455,9 @@ class PaxosNode(PaxosNodeInterface):
         if last_decision:
             slot, val, pid = last_decision
             require_sync = not self.paxos_in_progress and msg.proposal_id>latest # pid # and msg.proposal_id > my_pid
-            print(f"msg.proposal_id: {msg.proposal_id} > latest: {latest}")
-            print(f"msg.proposal_id: {msg.proposal_id} > pid: {pid}")
-            print(f"Node {self.node_id} Heartbeat from Node {msg.sender_id} with proposal_id: {msg.proposal_id}, pid: {pid}, checking if reconciliation is required...require_sync?{require_sync}")
-            # input("Wait...")
-
+            self.logger.info(f"msg.proposal_id: {msg.proposal_id} > latest: {latest}")
+            self.logger.info(f"msg.proposal_id: {msg.proposal_id} > pid: {pid}")
+            self.logger.info(f"Node {self.node_id} Heartbeat from Node {msg.sender_id} with proposal_id: {msg.proposal_id}, pid: {pid}, checking if reconciliation is required...require_sync?{require_sync}")
             self.logger.info(
                 f"[Node {self.node_id}] Detected higher proposal ID "
                 f"{msg.proposal_id} from Node {msg.sender_id}"
@@ -539,21 +534,20 @@ class PaxosNode(PaxosNodeInterface):
 
         # 🟣 1️⃣ Handle self as an acceptor (loopback)
         try:
-            print("Creating Local Promise...")
+            self.logger.info("Creating Local Promise...")
             # act as acceptor for our own prepare
             local_promise = await self.on_prepare(prepare_msg)
-            print(f"Local Promise (counting self): {local_promise}")
+            self.logger.info(f"Local Promise (counting self): {local_promise}")
 
             # if local_promise and local_promise.get("type") == MessageType.PROMISE.value:
             if local_promise and local_promise.type == PaxosMessage.PROMISE:
                 self.receive_promise(local_promise)
                 self.logger.debug(f"[Node {self.node_id}] Counted self PROMISE for proposal {proposal.proposal_id}")
-                print(f"[Node {self.node_id}] Counted self PROMISE for proposal {proposal.proposal_id}")
             elif local_promise and local_promise.type == PaxosMessage.ERR:
 
-                print(f"Received Local Error, indicating we need to increase our proposal_id: {proposal.proposal_id}")
-                print(f"proposal: {proposal}")
-                print(f"local_promise: {local_promise}")
+                self.logger.info(f"Received Local Error, indicating we need to increase our proposal_id: {proposal.proposal_id}")
+                self.logger.info(f"proposal: {proposal}")
+                self.logger.info(f"local_promise: {local_promise}")
                 if (
                     isinstance(self.strategy, MultiPaxos)
                     and self.leader_id == self.node_id
@@ -562,9 +556,8 @@ class PaxosNode(PaxosNodeInterface):
                    proposal. proposal_id = self.leader_ballot
                 else:
                     proposal.proposal_id = self.next_proposal_id()
-                print(f"Incremented proposal.id: {proposal.proposal_id}")
+                self.logger.info(f"Incremented proposal.id: {proposal.proposal_id}")
                 resp = await self.prepare_self(proposal)
-                print(resp)
                 return resp
 
         except Exception as e:
@@ -598,7 +591,14 @@ class PaxosNode(PaxosNodeInterface):
             leader_id=self.leader_id or -1,
             timestamp=self.clock.now(),  # logical time
         )
+
         host, port = leader[0], leader[1]
+        if self.leader_id != -1 and self.leader_id in self.peer_state:
+            leader_state = self.peer_state[self.leader_id]
+            self.logger.info(f"send_fast_path to {host}:{port} -> state: {leader_state}")
+            if leader_state["state"] == NodeState.DOWN:
+                await self.start_election()
+
         self.logger.info(f"inside send_fast_path sending to: host={host}, port={port}")
         try:
             resp = await self.retry_manager.run(
@@ -633,9 +633,9 @@ class PaxosNode(PaxosNodeInterface):
                 if resp.multi.value is not None:# and resp.multi.value != '':
                     adopted_value = resp.multi.value
                     proposal.value = adopted_value
-                    print(f"Overrode value of proposal: {proposal}")
+                    self.logger.info(f"Overrode value of proposal: {proposal}")
                 else:
-                    print("Received value for already decided slot was empty, couldnt adopt value")
+                    self.logger.info("Received value for already decided slot was empty, couldnt adopt value")
         except Exception as e:
             self.logger.warning(f"[Node {self.node_id}] Failed FAST_PATH to {self.leader_id}: {e}")
 
