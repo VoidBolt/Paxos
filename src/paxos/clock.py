@@ -3,7 +3,7 @@ class VirtualClock:
         self.time = 0
 
     def now(self):
-        self.time += 1
+        self.advance()
         return self.time
 
     def advance(self, steps=1):

@@ -30,6 +30,12 @@ class AcceptorStorage:
         # Just making sure
         init_needed = True # not os.path.exists(path)
         print(f"Init needed? -> {init_needed}")
+
+        print("=== SQLITE DEBUG ===")
+        print("Requested path:", path)
+        print("Absolute path:", os.path.abspath(path))
+        print("Exists before connect:", os.path.exists(path))
+        print("====================")
         self.path = path
         self.conn = sqlite3.connect(path, check_same_thread=False)
         self.conn.execute("PRAGMA journal_mode=WAL;")
@@ -45,35 +51,9 @@ class AcceptorStorage:
         if node_id is not None:
             self._check_or_set_node_id(node_id)
 
-    # def _load_sql(self, filename: str) -> str:
-    #    with open(os.path.join(self.SQL_DIR,  filename), "r", encoding="utf-8") as f:
-    #        return f.read()
-
     def _load_sql(self, filename: str) -> str:
         """Load an entire SQL file."""
         return self.SQL_DIR.joinpath(filename).read_text(encoding="utf-8")
-    """
-    def _load_queries(self, filename: str) -> dict[str, str]:
-        queries = {}
-        path = os.path.join(self.SQL_DIR, filename)
-        current_name = None
-        buffer = []
-
-        with open(path, "r", encoding="utf-8") as f:
-            for line in f:
-                if line.startswith("--"):
-                    if current_name:
-                        queries[current_name] = "".join(buffer).strip()
-                        buffer = []
-                    current_name = line[2:].strip()
-                else:
-                    buffer.append(line)
-
-        if current_name:
-            queries[current_name] = "".join(buffer).strip()
-
-        return queries
-    """
     def _load_queries(self, filename: str) -> dict[str, str]:
         """Load a SQL file containing multiple named queries separated by '-- name'."""
         queries = {}
@@ -94,32 +74,7 @@ class AcceptorStorage:
             queries[current_name] = "".join(buffer).strip()
 
         return queries
-    """
-    def _init_db(self):
-        cur = self.conn.cursor()
-        # Meta table for node identity and misc info
-        print("Executing init_meta.sql ....")
-        cur.execute(self._load_sql("init_meta.sql"))
-        print("Executed init_meta.sql! Meta-Table should exist now.")
 
-        print("Executing init_global_state.sql ....")
-        cur.execute(self._load_sql("init_global_state.sql"))
-        print("Executed init_global_state.sql! Global-state-Table should exist now.")
-
-        print("Executing seed_global_state.sql ....")
-        cur.execute(self._load_sql("seed_global_state.sql"))
-        print("Executed seed_global_state.sql! Global-state-Data should exist in the Table now.")
-
-        print("Executing init_slots.sql ....")
-        cur.execute(self._load_sql("init_slots.sql"))
-        print("Executed init_slots.sql! Slots-Table should exist now.")
-
-        print("Executing init_decisions.sql ....")
-        cur.execute(self._load_sql("init_decisions.sql"))
-        print("Executed init_decisions.sql! Decisions-Table should exist now.")
-
-        self.conn.commit()
-    """
     def _init_db(self):
         cur = self.conn.cursor()
 
@@ -135,23 +90,6 @@ class AcceptorStorage:
             print(f"Executed {filename}! {description} initialized.")
 
         self.conn.commit()
-    """
-    def _check_or_set_node_id(self, node_id: int):
-        cur = self.conn.cursor()
-        cur.execute("SELECT val FROM meta WHERE key='node_id'")
-        row = cur.fetchone()
-        if not row:
-            # Not set yet, bind this DB to the node_id
-            cur.execute("INSERT INTO meta (key, val) VALUES ('node_id', ?)", (json.dumps(node_id),))
-            self.conn.commit()
-        else:
-            stored = json.loads(row[0])
-            if stored != node_id:
-                raise RuntimeError(
-                    f"Database {self.path} already bound to node_id={stored}, "
-                    f"but tried to start with node_id={node_id}"
-                )
-    """
 
     def _check_or_set_node_id(self, node_id: int):
         cur = self.conn.cursor()
@@ -299,7 +237,8 @@ class AcceptorStorage:
     # -----------------
     # Decisions (chosen values for slots)
     # -----------------
-    def set_decision(self, slot: int, value, proposal_id):
+    """
+    def set_decision(self, slot: int, value, proposal_id, time=0):
         cur = self.conn.cursor()
 
         cur.execute(
@@ -308,6 +247,28 @@ class AcceptorStorage:
         )
 
         # Inline to preserve atomicity (do NOT call set_accepted/set_promised)
+        cur.execute(
+            self.slots_sql["upsert_accepted"],
+            (slot, json.dumps(proposal_id), json.dumps(value))
+        )
+
+        cur.execute(
+            self.slots_sql["upsert_promised"],
+            (slot, json.dumps(proposal_id))
+        )
+
+        self._update_meta_latest_if_higher(cur, proposal_id)
+        self.conn.commit()
+    """
+
+    def set_decision(self, slot: int, value, proposal_id, logical_time=0):
+        cur = self.conn.cursor()
+
+        cur.execute(
+            self.decisions_sql["upsert_decision"],
+            (slot, json.dumps(value), proposal_id, logical_time)
+        )
+
         cur.execute(
             self.slots_sql["upsert_accepted"],
             (slot, json.dumps(proposal_id), json.dumps(value))
@@ -437,6 +398,12 @@ class AcceptorStorage:
     # -----------------
     # Meta helpers
     # -----------------
+    def all_meta(self):
+        cur = self.conn.cursor()
+        cur.execute("SELECT key, val FROM meta")
+        row = cur.fetchall()
+        return row
+
     def get_meta(self, key: str):
         cur = self.conn.cursor()
         cur.execute(self.meta_sql["get_meta"], (key,))
@@ -502,6 +469,8 @@ def test_latest():
     # --- Test get_latest_proposal_id ---
     get_latest_proposal_id = storage.get_latest_proposal_id()
     print("Latest proposal_id:", get_latest_proposal_id)
+
+
     # --- Test get_latest_decision ---
     latest = storage.get_latest_decision()
     print("Latest decision:", latest)
@@ -526,15 +495,20 @@ if __name__ == "__main__":
 
         # --- META ---
         print("=== META ===")
-        cur = store.conn.cursor()
-        cur.execute("SELECT key, val FROM meta")
-        rows = cur.fetchall()
-        if not rows:
+        meta = store.all_meta()
+
+
+        if not meta:
             print("(empty)")
         else:
-            for k, v in rows:
+            for k, v in meta:
                 print(f"{k}: {json.loads(v) if v is not None else None}")
 
+        print(f"Meta:\n{meta}")
+
+
+
+        cur = store.conn.cursor()
         # --- GLOBAL STATE ---
         print("\n=== GLOBAL STATE ===")
         cur.execute("SELECT key, val FROM global_state")

@@ -15,7 +15,6 @@ from dataclasses import dataclass
 import logging
 import json
 # from utils.networkLogger import NetworkLogger
-from datetime import datetime
 
 from paxos.acceptor_storage import AcceptorStorage
 from paxos.strategies.single_decree import SingleDecreePaxos
@@ -151,6 +150,8 @@ class PaxosNode(PaxosNodeInterface):
                  storage_path: str, strategy="single"):
         print(f"Starting PaxosNode on {host}:{port}")
         self.node_id = node_id
+        self.leader_ballot = None
+
         self.totalnodecount = node_count
         self.state = NodeState.UP
         self.role: NodeRole = NodeRole.ACCEPTOR
@@ -237,7 +238,6 @@ class PaxosNode(PaxosNodeInterface):
         self.simulated = False
 
         self.worker_task = asyncio.create_task(self.proposal_worker())
-        self.leader_ballot = None
 
 # -----------------
 # Reconciliation Logic 
@@ -326,13 +326,14 @@ class PaxosNode(PaxosNodeInterface):
             self.set_state(NodeState.UP, "quorum restored")
     
     async def send_heartbeat(self, nid, host, port, now):
+        # print(f"Sending Heartbeat... nid: {nid}, host: {host}, {port}, {now}")
         if nid == self.node_id:
             return
         
         self.logger.debug(f"Node {self.node_id} Sending heartbeat to Node {nid} -> {host}:{port} at {now}")
         # print(f"Node {self.node_id} Sending heartbeat to Node {nid} -> {host}:{port} at {now}")
         proposal_id = self.storage.get_latest_proposal_id()
-        self.logger.debug(f"Node {self.node_id} got {proposal_id} from storage.")
+        # print(f"Node {self.node_id} got {proposal_id} from storage.")
         known_slots = self.storage.get_known_slots()
         # --- Send heartbeat and check connectivity ---
         msg = PaxosMessage(
@@ -355,6 +356,7 @@ class PaxosNode(PaxosNodeInterface):
                     self.peer_state[nid]['state'] = NodeState.UP
                     # print(f"Peer {nid}: {self.peer_state[nid]}")
                     self.logger.debug(f"Peer {nid} marked UP (heartbeat OK)")
+                    print(f"Peer {nid} marked UP (heartbeat OK)")
                     await self.handle_peer_revival(nid)
             else:
                 # No reply — may be temporarily unreachable
@@ -363,12 +365,15 @@ class PaxosNode(PaxosNodeInterface):
                     if self.peer_state[nid] != None and self.peer_state[nid]['state'] != NodeState.DOWN:
                         self.peer_state[nid]['state'] = NodeState.DOWN
                         self.logger.warning(f"Peer {nid} marked DOWN (no heartbeat reply)")
+                        print(f"Peer {nid} marked DOWN (no heartbeat reply)")
 
                         # if a peer has been detected that is down and the leader, try to reelect with remaining peers
                         if nid == self.leader_id:
+                            print("Peer is supposed to be the leader but is DOWN -> start_election...")
                             await self.start_election()
 
         except Exception as e:
+            print(f"Could not send Heartbeat to nid: {nid}, host: {host}, port: {port}")
             self.logger.error(f"Error: {e}")
             # Connection or unexpected error — treat as potential failure
             last = self.heartbeat_state.get(nid, 0)
@@ -379,6 +384,7 @@ class PaxosNode(PaxosNodeInterface):
 
                     # if a peer has been detected that is down and the leader, try to reelect with remaining peers
                     if nid == self.leader_id:
+                        print("Peer is supposed to be the leader but is DOWN -> start_election...")
                         await self.start_election()
 
     async def heartbeat_loop(self):
@@ -386,8 +392,8 @@ class PaxosNode(PaxosNodeInterface):
         # if isinstance(self.strategy, MultiPaxos):
         #    return  # MultiPaxos handles heartbeats differently
         print(f"Node {self.node_id} Heart-start!")
-        self.logger.info(f"Heartbeat loop started Node {self.node_id}. self._stopping? {self._stopping}",)
-        self.logger.info(f"self.peers? {self.peers}",)
+        print(f"Heartbeat loop started Node {self.node_id}. self._stopping? {self._stopping}",)
+        print(f"self.peers? {self.peers}",)
 
         try:
             while not self._stopping:
@@ -415,8 +421,11 @@ class PaxosNode(PaxosNodeInterface):
 
     async def on_heartbeat(self, msg: PaxosMessage) -> dict:
         time_received = self.clock.now() # time.time()
+
         self.logger.debug(f"Node {self.node_id} received Heartbeat from Node {msg.sender_id}")
         self.logger.debug(f"Node {self.node_id} -> {msg}")
+
+        # print(f"Node {self.node_id} received Heartbeat from Node {msg.sender_id}")
 
         if msg.leader_id is not None:
             self.leader_id = msg.leader_id
@@ -436,14 +445,20 @@ class PaxosNode(PaxosNodeInterface):
         
         require_sync = False #default
 
-        last_decision = self.storage.get_last_decision()
+        # print("Figuring out if this Node requires Syncing...")
+        
+
+
+        # last_decision = self.storage.get_last_decision()
         latest = self.storage.get_latest_proposal_id()
+        last_decision = self.storage.get_known_slots()
         my_pid = latest if latest is not None else 0
 
-        self.logger.info("Last Decision:", last_decision)
+        self.logger.info(f"Last Decision: {last_decision}")
+
+
         if not last_decision:
-
-
+            # print("NOT last_decision")
             require_sync = not self.paxos_in_progress and msg.proposal_id>my_pid # and msg.proposal_id > my_pid
             self.logger.debug(f"Node {self.node_id} Heartbeat from Node {msg.sender_id} with proposal_id: {msg.proposal_id}, my_pid: {my_pid}, checking if reconciliation is required...require_sync?{require_sync}")
             self.logger.info(
@@ -453,7 +468,8 @@ class PaxosNode(PaxosNodeInterface):
             )
 
         if last_decision:
-            slot, val, pid = last_decision
+            # print("last_decision")
+            _, _, pid = last_decision
             require_sync = not self.paxos_in_progress and msg.proposal_id>latest # pid # and msg.proposal_id > my_pid
             self.logger.info(f"msg.proposal_id: {msg.proposal_id} > latest: {latest}")
             self.logger.info(f"msg.proposal_id: {msg.proposal_id} > pid: {pid}")
@@ -464,7 +480,10 @@ class PaxosNode(PaxosNodeInterface):
                 f"because msg.proposal_id>pid => {msg.proposal_id}>{pid} "
             )
 
+        # print(f"Node {self.node_id} received Heartbeat from Node {msg.sender_id}, requireSync?: {require_sync}")
+
         if require_sync and ENABLE_SYNC:
+            print(f"Node {self.node_id} requires_sync from sender: {msg.sender_id}!")
             await self.request_sync_from(msg.sender_id)
         return PaxosMessage(type=PaxosMessage.HEARTBEAT_OK, sender_id=self.node_id) # {'type': 'heartbeat_ok', 'sender_id': self.node_id}
 
@@ -548,15 +567,25 @@ class PaxosNode(PaxosNodeInterface):
                 self.logger.info(f"Received Local Error, indicating we need to increase our proposal_id: {proposal.proposal_id}")
                 self.logger.info(f"proposal: {proposal}")
                 self.logger.info(f"local_promise: {local_promise}")
+
+
+                print(f"Received Local Error, indicating we need to increase our proposal_id: {proposal.proposal_id}")
+                print(f"proposal: {proposal}")
+                print(f"local_promise: {local_promise}")
                 if (
                     isinstance(self.strategy, MultiPaxos)
                     and self.leader_id == self.node_id
                     and self.leader_ballot is not None
                 ):
-                   proposal. proposal_id = self.leader_ballot
+                    print(f"I am the leader (current_ballot = {self.leader_ballot}), a proposal is being rejected by proposal_id, which means i need to increase my leader_ballot!")
+                    self.leader_ballot = self.next_proposal_id()
+                    proposal.proposal_id = self.leader_ballot
+                    print(f"I am the leader, setting my proposal_id to my leader_ballot: {self.leader_ballot}")
                 else:
+
+                    print(f"I am the leader, setting my proposal_id to my leader_ballot: {self.leader_ballot}")
                     proposal.proposal_id = self.next_proposal_id()
-                self.logger.info(f"Incremented proposal.id: {proposal.proposal_id}")
+                print(f"Incremented proposal.id: {proposal.proposal_id}")
                 resp = await self.prepare_self(proposal)
                 return resp
 
@@ -617,10 +646,15 @@ class PaxosNode(PaxosNodeInterface):
 
             if resp.type == PaxosMessage.FAST_PATH_OK:
                 self.logger.debug("FAST_PATH_OK RECEIVED! Good, the leader will handle the coordination.")
+            """
             elif resp.type == PaxosMessage.ERR:
                 self.logger.error(f"Received PaxosMessage.ERR")
                 self.logger.error(f"Received Error adopting value:{resp.multi.value!r}")
                 self.logger.error(f"Received Error adopting higher id:{resp.multi.accepted_id!r}")
+                
+                print(f"Received PaxosMessage.ERR")
+                print(f"Received Error adopting value:{resp.multi.value}\n")
+                print(f"Received Error adopting higher id:{resp.multi.accepted_id}")
                 
                 if resp.multi.accepted_id is not None:
                         adopted_id = resp.multi.accepted_id + 1
@@ -636,6 +670,7 @@ class PaxosNode(PaxosNodeInterface):
                     self.logger.info(f"Overrode value of proposal: {proposal}")
                 else:
                     self.logger.info("Received value for already decided slot was empty, couldnt adopt value")
+            """
         except Exception as e:
             self.logger.warning(f"[Node {self.node_id}] Failed FAST_PATH to {self.leader_id}: {e}")
 
@@ -673,6 +708,7 @@ class PaxosNode(PaxosNodeInterface):
         Run Paxos (prepare -> accept -> learn) for a given value.
         Called by the leader or proposer.
         """
+        print(f"Running Coordinate with: [value, slot, skip_prepare] = [{value}, {slot}, {skip_prepare}]")
         if self.state == NodeState.DOWN:
             self.logger.error("Node is DOWN, cannot coordinate.")
             return None
@@ -683,11 +719,15 @@ class PaxosNode(PaxosNodeInterface):
 
         self.logger.info(f"Node {self.node_id} Coordinate!")
         self.logger.info(f"Current Strategy: {self.strategy}")
+
         if isinstance(self.strategy, SingleDecreePaxos):
             if self.strategy.chosen_value is not None:
                 return True
         elif isinstance(self.strategy, MultiPaxos):
             self.logger.info("MultiPaxos redirect should happen here... identify the leader and send him your suggested value for a slot!")
+            if self.leader_id == -1:
+                await(self.start_election())
+
             if self.leader_id and self.node_id != self.leader_id:
                 leader = self.peers[self.leader_id]
                 self.logger.info(f"Identified Leader -> {leader}. Attempting to forward proposition...")
@@ -712,72 +752,139 @@ class PaxosNode(PaxosNodeInterface):
             slot
         )
 
-        # -----------------
-        # Phase 1: Prepare
-        # -----------------
-
-        self.logger.info(f"Node {self.node_id} send prepare to {self.peers.items()}!")
-
         # either send self a prepare to treat it the same or count + 1 during promise evaluation
         if not skip_prepare:
+            print("NOT SKIPPING PREPARE PHASE (NO MULTI PAXOS LEADER)")
+
+            # -----------------
+            # Phase 1: Prepare
+            # -----------------
+            self.logger.info(f"Node {self.node_id} send prepare to {self.peers.items()}!")
+
+            print("---"*15)
+            print("---"*5, "PREPARE", "---"*5)
+            print("---"*15)
+
             proposal = await self.send_prepare(self.peers.items(), proposal)
 
             if not proposal:
                 raise Exception("After Prepare proposal wasn't returned...")
+
+            print("---"*15)
+            print("---"*5, "PREPARE", "---"*5)
+            print("---"*15)
+
+            print(f"Proposal after sending each peer a prepare: {proposal}")
+            print("---"*15)
 
             self.logger.info(f"Node {self.node_id} Proposal after send_prepare: {proposal}")
 
             if not self.decide_on_promises_received(proposal):
                 print("Decide on Promises Received returned False")
                 return False
+
+            print("RECEIVED ENOUGH PROMISES")
+
+            print("---"*15)
+            print("---"*5, "ACCEPT", "---"*5)
+            print("---"*15)
+            # -----------------
+            # Phase 2: Accepted
+            # -----------------
+            self.logger.info(f"Sending Accept-Paxos-Msg with proposal: {proposal}, slot:{proposal.slot}, value: {proposal.value}")
+
+            print(f"Sending Accept-Paxos-Msg with proposal: {proposal}, slot:{proposal.slot}, value: {proposal.value}")
+            accepted_count = await self.send_accept(self.peers.items(), proposal)
+
+            self.logger.info(f"Node {self.node_id} got {accepted_count} acceptances from peers!")
+            quorum = len(self.peers) // 2 + 1
+            if accepted_count < quorum:
+                # _emit_metric(self.metrics_path, self._make_event("coordinate_failed", proposal_id=proposal_id, slot=slot, reason="not_enough_promises"))
+                
+                self.logger.info(f"Node {self.node_id} failed to get majority of acceptances ({accepted_count}<{quorum}==False) with peers!")
+                self.set_state(NodeState.BLOCKED, "failed to get majority accepts")                       # Could not reach majority quorum
+                return None
+            
+
+            self.logger.info(f"Node {self.node_id} successfully got majority of acceptances ({accepted_count}<{quorum}==True) with peers!")
+            # if we are here, we have reached consensus
+
+            # -----------------
+            # Phase 3: Learn
+            # -----------------
+            print("---"*15)
+            print("---"*5, "LEARN", "---"*5)
+            print("---"*15)
+            # Success — learned value
+            self.set_state(NodeState.UP, "achieved quorum, decision made")
+            print("HELP COORDINATE")
+            self.set_consensus(proposal.value, proposal.slot, proposal.proposal_id)
+            
+            self.logger.info(f"Node {self.node_id} sending learn messages to peers!")
+            ack_learn_count = await self.send_learn(self.peers.items(), proposal)
+            self.logger.info(f"Node {self.node_id} got #learn_ack={ack_learn_count}.")
+
+            self.logger.info(f"Consensus reached, saving logs to CSV for Node {self.node_id}.")
+            # input("SAVE")
+
+            return True
         else:
+            print("SKIPPING PREPARE PHASE (AS MULTI PAXOS LEADER; USE LEADER_BALLOT FOR DECISIONS)")
             print("Fast foward coordinate, leader_ballot should be set (if not set it when a leader has been chosen) and it should be bigger than any proposal_id seen before..")
+
+            print("---"*15)
+            print("---"*5, "FAST_PATH_MULTI_PAXOS (with LEADER avail...)", "---"*5)
+            print("---"*15)
             self.logger.info(f"Node {self.node_id} is the leader and received fast_forward proposal from peer, skip prepare and going to phase 2 immediately...")
-            if not self.leader_ballot:
+            if not self.leader_ballot and isinstance(self.strategy, MultiPaxos):
+
                 print("LEADER BALLOT NOT SET!")
                 raise ValueError("Leader Ballot not defined! This should not be the case, a leader should get a Leader Ballot definition on successfully getting elected!")
-            proposal = Proposal(
-                self.node_id, 
-                self.leader_ballot, 
-                value, 
-                slot
-            )
 
+            print("---"*15)
+            print("---"*5, "ACCEPT", "---"*5)
+            print("---"*15)
+            # -----------------
+            # Phase 2: Accepted
+            # -----------------
+            self.logger.info(f"Sending Accept-Paxos-Msg with proposal: {proposal}, slot:{proposal.slot}, value: {proposal.value}")
 
-        # -----------------
-        # Phase 2: Accepted
-        # -----------------
-        self.logger.info(f"Sending Accept-Paxos-Msg with proposal: {proposal}")
-        accepted_count = await self.send_accept(self.peers.items(), proposal)
+            print(f"Sending Accept-Paxos-Msg with proposal: {proposal}, slot:{proposal.slot}, value: {proposal.value}")
+            accepted_count = await self.send_accept(self.peers.items(), proposal)
 
-        self.logger.info(f"Node {self.node_id} got {accepted_count} acceptances from peers!")
-        quorum = len(self.peers) // 2 + 1
-        if accepted_count < quorum:
-            # _emit_metric(self.metrics_path, self._make_event("coordinate_failed", proposal_id=proposal_id, slot=slot, reason="not_enough_promises"))
+            self.logger.info(f"Node {self.node_id} got {accepted_count} acceptances from peers!")
+            quorum = len(self.peers) // 2 + 1
+            if accepted_count < quorum:
+                # _emit_metric(self.metrics_path, self._make_event("coordinate_failed", proposal_id=proposal_id, slot=slot, reason="not_enough_promises"))
+                
+                self.logger.info(f"Node {self.node_id} failed to get majority of acceptances ({accepted_count}<{quorum}==False) with peers!")
+                self.set_state(NodeState.BLOCKED, "failed to get majority accepts")                       # Could not reach majority quorum
+                return None
             
-            self.logger.info(f"Node {self.node_id} failed to get majority of acceptances ({accepted_count}<{quorum}==False) with peers!")
-            self.set_state(NodeState.BLOCKED, "failed to get majority accepts")                       # Could not reach majority quorum
-            return None
-        
 
-        self.logger.info(f"Node {self.node_id} successfully got majority of acceptances ({accepted_count}<{quorum}==True) with peers!")
-        # if we are here, we have reached consensus
-        # -----------------
-        # Phase 3: Learn
-        # -----------------
-        # Success — learned value
-        self.set_state(NodeState.UP, "achieved quorum, decision made")
-        print("HELP COORDINATE")
-        self.set_consensus(proposal.value, proposal.slot, proposal.proposal_id)
-        
-        self.logger.info(f"Node {self.node_id} sending learn messages to peers!")
-        ack_learn_count = await self.send_learn(self.peers.items(), proposal)
-        self.logger.info(f"Node {self.node_id} got #learn_ack={ack_learn_count}.")
+            self.logger.info(f"Node {self.node_id} successfully got majority of acceptances ({accepted_count}<{quorum}==True) with peers!")
+            # if we are here, we have reached consensus
 
-        self.logger.info(f"Consensus reached, saving logs to CSV for Node {self.node_id}.")
-        # input("SAVE")
+            # -----------------
+            # Phase 3: Learn
+            # -----------------
+            print("---"*15)
+            print("---"*5, "LEARN", "---"*5)
+            print("---"*15)
+            # Success — learned value
+            self.set_state(NodeState.UP, "achieved quorum, decision made")
+            print("HELP COORDINATE")
+            self.set_consensus(proposal.value, proposal.slot, proposal.proposal_id)
+            
+            self.logger.info(f"Node {self.node_id} sending learn messages to peers!")
+            ack_learn_count = await self.send_learn(self.peers.items(), proposal)
+            self.logger.info(f"Node {self.node_id} got #learn_ack={ack_learn_count}.")
 
-        return True
+            self.logger.info(f"Consensus reached, saving logs to CSV for Node {self.node_id}.")
+            # input("SAVE")
+
+            return True
+        return False
     async def send_prepare(self, nodes, proposal: Proposal) -> Proposal:
         """
         Send PREPARE for a given slot to all peers.
@@ -835,12 +942,31 @@ class PaxosNode(PaxosNodeInterface):
                 responses.append(resp)
 
                 if resp.type == PaxosMessage.PROMISE:
-                    self.logger.debug("Received promise")
+                    self.logger.debug(f"Received promise from Node {resp.sender_id}")
+                    print(f"Received promise from Node {resp.sender_id}")
                 elif resp.type == PaxosMessage.ERR:
                     self.logger.error(f"Received PaxosMessage.ERR")
                     self.logger.error(f"Received Error adopting value:{resp.multi.value!r}")
                     self.logger.error(f"Received Error adopting higher id:{resp.multi.accepted_id!r}")
                     
+                    print(f"Received PaxosMessage.ERR")
+                    print(f"Received Error adopting value:{resp.multi.value}\n")
+                    print(f"Received Error adopting higher id:{resp.multi.accepted_id}")
+
+                    if (
+                        isinstance(self.strategy, MultiPaxos)
+                        and self.leader_id == self.node_id
+                        and self.leader_ballot is not None
+                    ):
+                        print(f"I am the leader (current_ballot = {self.leader_ballot}), a proposal is being rejected by proposal_id, which means i need to increase my leader_ballot!")
+                        self.leader_ballot = self.next_proposal_id()
+                        proposal.proposal_id = self.leader_ballot
+                        print(f"I am the leader, setting my proposal_id to my leader_ballot: {self.leader_ballot}")
+                    else:
+
+                        print(f"I am the leader, setting my proposal_id to my leader_ballot: {self.leader_ballot}")
+                        proposal.proposal_id = self.next_proposal_id()
+                    """
                     if resp.multi.accepted_id is not None:
                          adopted_id = resp.multi.accepted_id + 1
                          proposal.proposal_id = adopted_id
@@ -854,7 +980,7 @@ class PaxosNode(PaxosNodeInterface):
                         print(f"Overrode value of proposal: {proposal}")
                     else:
                         print("Received value for already decided slot was empty, couldnt adopt value")
-
+                    """
                     # Retry
                     return await self.send_prepare(nodes, proposal)
 
@@ -870,11 +996,12 @@ class PaxosNode(PaxosNodeInterface):
         """
         Handle incoming PREPARE message (ACCEPTOR side).
         """
-
+        print("---"*5, f"RECEIVE_PREPARE NODE {self.node_id}", "---"*5)
         promised = self.storage.get_promised(proposal.slot)
         promised = 0 if not promised else promised
         latest = self.storage.get_latest_proposal_id()
         latest = 0 if not latest else latest
+
         self.log_action(
             action="RECEIVE_PREPARE",
             action_value=f"promised_id={proposal.proposal_id}",
@@ -950,9 +1077,18 @@ class PaxosNode(PaxosNodeInterface):
         """
         Send PROMISE message back to proposer.
         """
+        # accepted_slot, accepted_id, accepted_value = self.storage.accepted_with_slot(proposal.slot)
+        print("---"*5,  "CHECK_GET_PROMISED", "---"*5)
+        promised = self.storage.get_promised(proposal.slot)
+        print(f"self.storage.get_promised(proposal.slot) = {promised} at slot: {proposal.slot}")
 
-        # accepted_id, accepted_value = self.storage.accepted(proposal.slot)
-        accepted_slot, accepted_id, accepted_value = self.storage.accepted_with_slot(proposal.slot)
+        print("---"*5,  "CHECK_GET_ACCEPTED", "---"*5)
+        accepted = self.storage.get_accepted(proposal.slot)
+        print(f"self.storage.get_accepted(proposal.slot) = {accepted} at slot: {proposal.slot}")
+
+
+        accepted_id, accepted_value = self.storage.accepted(proposal.slot)
+        print(f"Sending back promise to proposal: {proposal} with slot, id, value: {proposal.slot}, {accepted_id}, {accepted_value}")
         self.log_action(
             action="SEND_PROMISE",
             action_value=f"promised_id={proposal.proposal_id}",
@@ -1021,7 +1157,7 @@ class PaxosNode(PaxosNodeInterface):
         )
         ack_count = 1 # assuming self agreed (TODO)
 
-        # print(f"Node {self.node_id}", self.strategy.chosen_value)
+        print(f"Node {self.node_id} send Learn! {learn_msg}")
         # input()
         for nid, (host, port) in nodes:
 
@@ -1080,12 +1216,13 @@ class PaxosNode(PaxosNodeInterface):
         if s2 is None:
             raise ValueError("Message does not contain slot")
         return int(s2)
-
-    def receive_learn(self, proposal: Proposal) -> dict:
+    """
+    defined receive_learn(self, proposal: Proposal) -> dict:
         self.role = NodeRole.LEARNER
 
         # if proposal.proposal_id > self.storage.get_highest_less_than_n()
         # Update acceptor storage
+        print(f"Node {self.node_id}, Received learn: {proposal}")
         self.storage.set_accepted(proposal.slot, proposal.proposal_id, proposal.value)
         print("HELP LEARN")
         self.set_consensus(proposal.value, proposal.slot, proposal.proposal_id)
@@ -1129,7 +1266,10 @@ class PaxosNode(PaxosNodeInterface):
             ),
             sender_id=self.node_id
         )
+    """
     def receive_learn(self, proposal: Proposal) -> dict:
+
+        print(f"Node {self.node_id}, Received learn: {proposal}")
         self.role = NodeRole.LEARNER
         print(f"SET ACCEPTED slot: {proposal.slot}, id: {proposal.proposal_id}, value: {proposal.value}")
         self.storage.set_accepted(proposal.slot, proposal.proposal_id, proposal.value)
@@ -1187,6 +1327,8 @@ class PaxosNode(PaxosNodeInterface):
         - Otherwise, keep our own proposal value.
         """
         promises = self.received_promises.get(proposal.proposal_id, [])
+
+        print("---"*5, f"DECIDE_ON_PROMISES_RECEIVED NODE {self.node_id}", "---"*5)
         print(f"Received Promises: {promises}")
         # only keep unique promises by sender and only PROMISE messages
         seen = {}
@@ -1321,7 +1463,7 @@ class PaxosNode(PaxosNodeInterface):
         print(f"Setting Consensus...")        
         self.last_consensus = value
 
-        self.storage.set_decision(slot, value, accepted_id)
+        self.storage.set_decision(slot, value, accepted_id, self.clock.now())
 
         latest_proposal_id = self.storage.get_latest_proposal_id()
         if latest_proposal_id < accepted_id:
@@ -1550,11 +1692,22 @@ class PaxosNode(PaxosNodeInterface):
         proposal_id = msg.proposal_id
 
         promised = self.storage.get_promised(slot)
-        accepted_id, accepted_value = self.storage.accepted(slot)
+        print(f"self.storage.get_promised(slot): {promised}")
+        accepted_id, _ = self.storage.accepted(slot)
 
-        print(f"on_prepare promised: {promised}")
-        print(f"on_prepare accepted_id, accepted_value", accepted_id, accepted_value)
-        print(f"Node {self.node_id} on_prepare from Node {msg.sender_id}")
+        value = msg.multi.value
+
+        # print(f"self.storage.accepted(slot): {accepted_id}, accepted_value: {accepted_value}")
+        # accepted_id, accepted_value = self.storage.get_accepted(slot)
+        # accepted_value = self.storage.get_accepted(slot)
+
+        print(f"self.storage.get_accepted(slot): promised: {promised}, accepted_value: {_}, msg.value: {value}")
+        
+        print("-------------"*2, "on_prepare" ,"-------------"*2)
+        # print(f"on_prepare promised: {promised}")
+        # print(f"on_prepare accepted_value", accepted_value)
+        # print(f"Node {self.node_id} on_prepare from Node {msg.sender_id}")
+        print(f"Msg:{msg}")
         self.log_action(
             action="RECEIVE_PREPARE",
             action_value=f"proposal_id={msg.proposal_id}, promised=True",
@@ -1564,9 +1717,11 @@ class PaxosNode(PaxosNodeInterface):
             consensus_reached=False
         )
 
-        print(f"Deciding if ERR or PROMISE...promised: {promised}, proposal_id: {proposal_id}")
-        # --------- CASE 1: proposal_id < promised → REJECT ----------
+        # print(f"Deciding if ERR or PROMISE...promised: {promised}, proposal_id: {proposal_id}")
+        print(f"--------- CASE 1: proposal_id < promised → REJECT ---------- ({promised is not None and proposal_id < promised}) ")
+
         if promised is not None and proposal_id < promised:
+            print(f"Promised: {promised}, proposal_id: {proposal_id}, promised: {promised}")
             print(f"Sending back error, inquire to check proposal_id and increase it to fit current dataset: a_id:{accepted_id}, ")
             self.log_action(
                 action="ERROR",
@@ -1583,14 +1738,19 @@ class PaxosNode(PaxosNodeInterface):
                 multi=MultiPaxosPayload(
                     accepted_id=accepted_id if accepted_id is not None else None,
                     slot=slot,
-                    value=accepted_value if accepted_value is not None else None,
+                    value=value,
                     ok=True
                 ),
                 leader_id=self.leader_id or -1,
                 timestamp=self.clock.now(),
             )
+        else:
+            print("Not sending back error but a Promise...")
         
         if promised is None or msg.proposal_id >= promised: # msg.multi.slot not in all_accepted and (promised is None or msg.proposal_id > promised): # accepted_id == -1 and accepted_value == None:# promised is None or msg.proposal_id > promised:
+            print(f"Promised (id) on that slot is None so we can use the msg.id: {msg.proposal_id}, value: {value}")
+            # self.storage.set_accepted(slot, msg.proposal_id, accepted_value)
+
             returnmsg = PaxosMessage(
                 type=PaxosMessage.PROMISE,
                 sender_id=self.node_id,
@@ -1598,16 +1758,17 @@ class PaxosNode(PaxosNodeInterface):
                 multi=MultiPaxosPayload(
                     accepted_id=accepted_id, # None,# accepted_id if accepted_id is not None else None, # decision[1] if decision else msg.multi.slot,
                     slot=slot,
-                    value=accepted_value, # None,# accepted_value if accepted_value is not None else None, # decision[0] if decision else msg.multi.value,
+                    value=value, # None,# accepted_value if accepted_value is not None else None, # decision[0] if decision else msg.multi.value,
                     ok=False
                 ),
-                # msg.multi,
                 leader_id=self.leader_id or -1,
                 timestamp=self.clock.now(),
             )
 
-            print(f"Set Promised: {msg.slot}, {msg.proposal_id}")
-            self.storage.set_promised(msg.slot, msg.proposal_id)
+            print(f"Set Promised slot, id: {slot}, {msg.proposal_id}")
+            self.storage.set_promised(slot, msg.proposal_id)
+
+            print(f"returnmsg-accepted_id: {accepted_id}, returnmsg-slot: {slot}, returnmsg-value: {value}")
             print(f"Sending back Promise: {returnmsg}")
             # 1.Send back promise to not adopt proposal_id < msg.proposal_id and
             # 2. Last Consensus Value achieved before current msg.proposal_id
@@ -1621,6 +1782,8 @@ class PaxosNode(PaxosNodeInterface):
                 target_node_state=self.peer_state[msg.sender_id]['state'].name # NodeState.UP
             )
             return returnmsg       
+        
+        print("Nothing caught, this shouldnt happen.")
 
 # -----------------
 # Acceptor: accept request
@@ -1630,7 +1793,8 @@ class PaxosNode(PaxosNodeInterface):
         Receive Accept -> 
         """
         proposal = Proposal(msg.sender_id, msg.proposal_id, msg.multi.value, self._msg_slot(msg))
-        print(f"Node {self.node_id} on_accept from Node {msg.sender_id}")
+        print("---"*5, "ON_ACCEPT (SEND_ACCEPT)", "---"*5)
+        print(f"Node {self.node_id} on_accept from Node {msg.sender_id} with value: {msg.multi.value}")
         self.log_action(
             action="RECEIVE_ACCEPT",
             action_value=f"proposal_id={proposal.proposal_id}, accepted=True",
@@ -1638,14 +1802,20 @@ class PaxosNode(PaxosNodeInterface):
             target_node_role=self.role.name,# "PROPOSER",
             target_node_state=self.state.name,#NodeState.UP
         )
-
+        print(f"PaxosMessage: {msg}")
         promised = self.storage.get_promised(proposal.slot)
+        print(f"PROMISED: {promised}")
+
         if promised is None or proposal.proposal_id >= promised:
 
             self.logger.info(f"[Node {self.node_id} | {self.role.name}] ACCEPTED pid={proposal.proposal_id} value={proposal.value} slot={proposal.slot}")
             print(f"[Node {self.node_id} | {self.role.name}] ACCEPTED pid={proposal.proposal_id} value={proposal.value} slot={proposal.slot}")
             # self.storage.set_promised(proposal.slot, proposal.proposal_id)
             self.storage.set_accepted(proposal.slot, proposal.proposal_id, proposal.value)
+
+            got_accepted = self.storage.get_accepted(proposal.slot)
+            print(f"Got Accepted: {got_accepted}")
+
             self.logger.info(f"[Node {self.node_id} | {self.role.name}] ACCEPTED pid={proposal.proposal_id} value={proposal.value} slot={proposal.slot}")
             self.log_action(
                 action="SEND_ACCEPTED",
@@ -1666,6 +1836,7 @@ class PaxosNode(PaxosNodeInterface):
 # Learner: learn broadcast
 # -----------------
     async def on_learn(self, msg: PaxosMessage) -> PaxosMessage:
+        print("ON_LEARN")
         accepted_id = msg.proposal_id # ["accepted_id"]
         # sender_id = msg["sender_id"]
         return self.receive_learn(Proposal(msg.sender_id, accepted_id, msg.multi.value, msg.multi.slot))#, sender_id)
@@ -1906,3 +2077,4 @@ async def propose_to(local_node: dict, value: str, slot: int, use_worker=False):
 def random_small():
     import random
     return random.random() * 0.2
+
