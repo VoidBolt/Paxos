@@ -47,7 +47,7 @@ Example Output 3 Instances (after setup_network.py and using netns configs):
 --------------------------------------------------------
 Node 1 Namespace
 --------------------------------------------------------
-
+```console
 ❯ sudo ip netns exec node1 python src/paxos/paxos_async.py --inventory inventories/inventory_netns_min.yml --netns 1 --repl
 [sudo] password for *****:
 local_identities: ['10.10.0.1']
@@ -59,7 +59,7 @@ NodeLock acquired!
 Init needed? -> True
 === SQLITE DEBUG ===
 Requested path: paxos_manager_workspace/paxos_node_1.db
-Absolute path: /home/kat/Documents/paxos/Paxos/paxos_manager_workspace/paxos_node_1.db
+Absolute path: /home/*****/Documents/paxos/Paxos/paxos_manager_workspace/paxos_node_1.db
 Exists before connect: False
 ====================
 Init is needed! Creating Tables...
@@ -154,16 +154,6 @@ CONSENSUS REACHED!
 Saving CSV to logs/paxosresult_1_196611.csv
 SAVED TO CSV
 Saving CSV to logs/paxosresult_1_unknown.csv
-Exception in handle_connection (Node 1): ConnectionResetError – Connection lost
-Traceback (most recent call last):
-  File "/home/kat/Documents/paxos/Paxos/src/paxos/paxos_node.py", line 1602, in handle_connection
-    await writer.drain()
-  File "/home/kat/.pyenv/versions/3.12.6/lib/python3.12/asyncio/streams.py", line 392, in drain
-    await self._protocol._drain_helper()
-  File "/home/kat/.pyenv/versions/3.12.6/lib/python3.12/asyncio/streams.py", line 166, in _drain_helper
-    raise ConnectionResetError('Connection lost')
-ConnectionResetError: Connection lost
-
 Peer 2 marked DOWN (no heartbeat reply)
 --------------- ON_ACCEPT (SEND_ACCEPT) ---------------
 Node 1 on_accept from Node 3 with value: A
@@ -228,10 +218,14 @@ CONSENSUS REACHED!
 Saving CSV to logs/paxosresult_1_262147.csv
 SAVED TO CSV
 
+``` 
+
+```
+
 --------------------------------------------------------
 Node 2 Namespace
 --------------------------------------------------------
-
+```console
 ❯ sudo ip netns exec node2 python src/paxos/paxos_async.py --inventory inventories/inventory_netns_min.yml --netns 2 --proposal A 98 --proposal B 78 --proposal C 75
 local_identities: ['10.10.0.2']
 NetworkLogger init with base_url: http://10.10.0.100:5000/api/logger
@@ -242,7 +236,7 @@ NodeLock acquired!
 Init needed? -> True
 === SQLITE DEBUG ===
 Requested path: paxos_manager_workspace/paxos_node_2.db
-Absolute path: /home/kat/Documents/paxos/Paxos/paxos_manager_workspace/paxos_node_2.db
+Absolute path: /home/*****/Documents/paxos/Paxos/paxos_manager_workspace/paxos_node_2.db
 Exists before connect: True
 ====================
 Init is needed! Creating Tables...
@@ -339,12 +333,15 @@ Saving CSV to logs/paxosresult_2_unknown.csv
     slot 78: accepted_id=262147, accepted_value=B
     slot 98: accepted_id=196611, accepted_value=A
 Peer 1 marked DOWN (no heartbeat reply)
+``` 
 
+```
 
 --------------------------------------------------------
 Node 3 Namespace
 --------------------------------------------------------
 
+```console
 ❯ sudo ip netns exec node3 python src/paxos/paxos_async.py --inventory inventories/inventory_netns_min.yml --netns 3 --repl
 [sudo] password for *****:
 local_identities: ['10.10.0.3']
@@ -356,7 +353,7 @@ NodeLock acquired!
 Init needed? -> True
 === SQLITE DEBUG ===
 Requested path: paxos_manager_workspace/paxos_node_3.db
-Absolute path: /home/kat/Documents/paxos/Paxos/paxos_manager_workspace/paxos_node_3.db
+Absolute path: /home/*****/Documents/paxos/Paxos/paxos_manager_workspace/paxos_node_3.db
 Exists before connect: False
 ====================
 Init is needed! Creating Tables...
@@ -565,3 +562,6 @@ multi {
 }
 
 Peer 1 marked DOWN (no heartbeat reply)
+``` 
+
+```
