@@ -17,15 +17,6 @@ pytest is being used to test functionality
 Sample command for ssh in Lab to one of the other machines:
   - ssh -i /tmp/id_ed25519 s80697@pool-8P49D14.ris.bht-berlin.de
 
-+----+
-
-Linux namespaces execution commands:
- - 1. make install && python3 setup_network.py
- - 2. ansible-playbook -i inventories/inventory_netns.yml playbooks/run_netns.yml --ask-become-pass
-  (this inventory excludes self, so we can execute a seperate instance that isnt just "LISTENING")
-    - 3. 
-        3.1 this -> python3 src/paxos/paxos_async.py --inventory inventories/inventory_lab_min.yml --repl (interactive mode with "/help")
-        3.2 or -> python3 src/paxos/paxos_async.py --inventory inventories/inventory_lab_min.yml --proposal 'valueToBeStoredinSlot5' 5 'AnotherValueToSlot12' 12
 
 +----+
 
@@ -37,6 +28,41 @@ Linux namespaces execution commands:
         3.1 this -> python3 src/paxos/paxos_async.py --inventory inventories/inventory_lab_min.yml --repl (interactive mode with "/help")
         3.2 or -> python3 src/paxos/paxos_async.py --inventory inventories/inventory_lab_min.yml --proposal 'valueToBeStoredinSlot5' 5 'AnotherValueToSlot12' 12
 
++----+
+
+Linux namespaces execution commands:
+ - 1. make install && python3 setup_network.py
+ - 2. ansible-playbook -i inventories/inventory_netns.yml playbooks/run_netns.yml --ask-become-pass
+  (this inventory excludes self, so we can execute a seperate instance that isnt just "LISTENING")
+    - 3. 
+        3.1 this -> python3 src/paxos/paxos_async.py --inventory inventories/inventory_lab_min.yml --repl (interactive mode with "/help")
+        3.2 or -> python3 src/paxos/paxos_async.py --inventory inventories/inventory_lab_min.yml --proposal 'valueToBeStoredinSlot5' 5 'AnotherValueToSlot12' 12
+
+## Environment Requirements
+
+This project requires a Linux environment with support for network namespaces.
+
+The execution environment must provide the `ip` command (from the `iproute2` package), as the project uses:
+
+```bash
+sudo ip netns exec
+```
+
+to create and execute processes inside Linux network namespaces.
+
+Before running the project, ensure that `ip` is installed and available:
+
+```bash
+ip -V
+```
+
+On Debian/Ubuntu systems, install it with:
+
+```bash
+sudo apt install iproute2
+```
+
+The project also requires `sudo` privileges for namespace management.
 
 +----+
 
