@@ -331,8 +331,6 @@ Saving CSV to logs/paxosresult_2_unknown.csv
     slot 78: accepted_id=262147, accepted_value=B
     slot 98: accepted_id=196611, accepted_value=A
 Peer 1 marked DOWN (no heartbeat reply)
-``` 
-
 
 --------------------------------------------------------
 Node 3 Namespace
