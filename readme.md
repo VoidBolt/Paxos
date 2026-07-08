@@ -220,13 +220,10 @@ SAVED TO CSV
 
 ``` 
 
-
-```text
 --------------------------------------------------------
 Node 2 Namespace
 --------------------------------------------------------
 
-```console
 ❯ sudo ip netns exec node2 python src/paxos/paxos_async.py --inventory inventories/inventory_netns_min.yml --netns 2 --proposal A 98 --proposal B 78 --proposal C 75
 local_identities: ['10.10.0.2']
 NetworkLogger init with base_url: http://10.10.0.100:5000/api/logger
@@ -336,13 +333,11 @@ Saving CSV to logs/paxosresult_2_unknown.csv
 Peer 1 marked DOWN (no heartbeat reply)
 ``` 
 
-```text
 
 --------------------------------------------------------
 Node 3 Namespace
 --------------------------------------------------------
 
-```console
 ❯ sudo ip netns exec node3 python src/paxos/paxos_async.py --inventory inventories/inventory_netns_min.yml --netns 3 --repl
 [sudo] password for *****:
 local_identities: ['10.10.0.3']
@@ -565,4 +560,3 @@ multi {
 Peer 1 marked DOWN (no heartbeat reply)
 ``` 
 
-```
