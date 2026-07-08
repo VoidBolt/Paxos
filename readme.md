@@ -560,7 +560,15 @@ multi {
 }
 
 Peer 1 marked DOWN (no heartbeat reply)
-``` 
 
+# REPL-command
+state
+Node 3: running=True leader=3
+peers: {1: ('10.10.0.1', 5001), 2: ('10.10.0.2', 5002)}
+peer_state: {1: {'last_heartbeat': 173, 'state': <NodeState.DOWN: 2>, 'role': <NodeRole.LEARNER: 3>}, 2: {'last_heartbeat': 4709, 'state': <NodeState.UP: 1>, 'role': <NodeRole.LEARNER: 3>}}
+  Slots with consensus:
+    slot 75: accepted_id=262147, accepted_value=C
+    slot 78: accepted_id=262147, accepted_value=B
+    slot 98: accepted_id=196611, accepted_value=A
 
 ``` 
